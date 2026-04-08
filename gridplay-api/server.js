@@ -73,34 +73,93 @@ function normalizeEscapes(value) {
         .replace(/&amp;/g, '&');
 }
 
-function pickBestMediaUrl(html) {
-    const patterns = [
-        /https:\/\/video\.pmvhaven\.com\/videos\/[^"]+?\.mp4(?!\/[0-9]+p\.m3u8)(?:\?[^"]*)?/gi,
-        /https:\/\/video\.pmvhaven\.com\/videos\/[^"]+?\.mp4(?:\?[^"]*)?/gi,
-        /https:\/\/video\.pmvhaven\.com\/[^"]+?\.m3u8(?:\?[^"]*)?/gi,
-        /https:\/\/video\.pmvhaven\.com\/[^"]+?\.mp4(?:\?[^"]*)?/gi,
-        /"contentUrl"\s*:\s*"(https:\/\/video\.pmvhaven\.com[^"]+)"/gi,
-        /"src"\s*:\s*"(https:\/\/video\.pmvhaven\.com[^"]+)"/gi
-    ];
+function extractResolutionFromCandidate(urlText) {
+    const explicitMatches = [...urlText.matchAll(/(?:^|[^0-9])(2160|1440|1080|720|480|360|240|144)p(?:[^0-9]|$)/gi)];
+    if (explicitMatches.length > 0) {
+        return Number(explicitMatches[0][1]);
+    }
 
-    for (const pattern of patterns) {
-        const matches = [...html.matchAll(pattern)];
-        if (matches.length === 0) {
-            continue;
-        }
-
-        for (const match of matches) {
-            const candidate = normalizeEscapes(match[1] || match[0]);
-            try {
-                const validated = validateUpstreamMediaUrl(candidate);
-                return validated.toString();
-            } catch (_) {
-                continue;
-            }
+    const dimensions = [...urlText.matchAll(/(\d{3,4})x(\d{3,4})/gi)];
+    if (dimensions.length > 0) {
+        const heights = dimensions
+            .map(match => Number(match[2]))
+            .filter(Number.isFinite)
+            .sort((a, b) => b - a);
+        if (heights.length > 0) {
+            return heights[0];
         }
     }
 
-    throw new Error('Could not find a playable PMVHaven media URL.');
+    return 0;
+}
+
+function getMediaType(parsedUrl) {
+    const path = parsedUrl.pathname.toLowerCase();
+    if (path.endsWith('.mp4')) {
+        return 'mp4';
+    }
+    if (path.endsWith('.m3u8')) {
+        return 'm3u8';
+    }
+    return 'other';
+}
+
+function collectMediaCandidates(html) {
+    const normalizedHtml = normalizeEscapes(html);
+    const rawMatches = normalizedHtml.match(/https:\/\/video\.pmvhaven\.com\/[\w\-./%?=&#+:,;~]+/gi) || [];
+    const candidates = [];
+    const seen = new Set();
+
+    for (const raw of rawMatches) {
+        try {
+            const parsed = validateUpstreamMediaUrl(raw);
+            const mediaType = getMediaType(parsed);
+            if (mediaType === 'other') {
+                continue;
+            }
+
+            const normalized = parsed.toString();
+            if (seen.has(normalized)) {
+                continue;
+            }
+
+            seen.add(normalized);
+            candidates.push({
+                url: normalized,
+                resolution: extractResolutionFromCandidate(normalized),
+                mediaType,
+                progressiveScore: mediaType === 'mp4' ? 1 : 0
+            });
+        } catch (_) {
+            continue;
+        }
+    }
+
+    return candidates;
+}
+
+function pickBestMediaUrl(html) {
+    const candidates = collectMediaCandidates(html);
+    if (candidates.length === 0) {
+        throw new Error('Could not find a playable PMVHaven media URL.');
+    }
+
+    candidates.sort((a, b) => {
+        if (b.resolution !== a.resolution) {
+            return b.resolution - a.resolution;
+        }
+        if (b.progressiveScore !== a.progressiveScore) {
+            return b.progressiveScore - a.progressiveScore;
+        }
+        return a.url.localeCompare(b.url);
+    });
+
+    return {
+        mediaUrl: candidates[0].url,
+        chosenResolution: candidates[0].resolution,
+        chosenType: candidates[0].mediaType,
+        candidateCount: candidates.length
+    };
 }
 
 async function handleResolve(reqUrl, res) {
@@ -127,13 +186,17 @@ async function handleResolve(reqUrl, res) {
         }
 
         const html = await upstream.text();
-        const mediaUrl = pickBestMediaUrl(html);
+        const picked = pickBestMediaUrl(html);
+        const mediaUrl = picked.mediaUrl;
         const streamUrl = `/gridplay-api/stream?url=${encodeURIComponent(mediaUrl)}`;
 
         sendJson(res, 200, {
             sourceUrl: pageUrl.toString(),
             mediaUrl,
-            streamUrl
+            streamUrl,
+            chosenResolution: picked.chosenResolution,
+            chosenType: picked.chosenType,
+            candidateCount: picked.candidateCount
         });
     } catch (error) {
         sendJson(res, 502, { error: `Resolve failed: ${error.message}` });

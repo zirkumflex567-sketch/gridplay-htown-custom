@@ -658,7 +658,15 @@
             }
             
             if (videoId && videoId.length === 11) {
-                return `https://www.youtube.com/embed/${videoId}?rel=0&modestbranding=1&cc_load_policy=1`;
+                const params = new URLSearchParams({
+                    rel: '0',
+                    modestbranding: '1',
+                    cc_load_policy: '1',
+                    playsinline: '1',
+                    hd: '1',
+                    vq: 'hd1080'
+                });
+                return `https://www.youtube.com/embed/${videoId}?${params.toString()}`;
             }
             
             return url;
@@ -681,7 +689,14 @@
             const match = url.match(regExp);
             
             if (match && match[1]) {
-                return `https://player.vimeo.com/video/${match[1]}`;
+                const params = new URLSearchParams({
+                    quality: '1080p',
+                    autoplay: '0',
+                    byline: '0',
+                    portrait: '0',
+                    title: '0'
+                });
+                return `https://player.vimeo.com/video/${match[1]}?${params.toString()}`;
             }
             return url;
         }
@@ -778,6 +793,9 @@
         function buildVideoMarkup(src, videoId, options = {}) {
             const playbackSrc = options.playbackSrc || src;
             const forceHtml5 = options.forceHtml5 === true;
+            const playbackType = playbackSrc.toLowerCase().includes('.m3u8')
+                ? 'application/x-mpegURL'
+                : 'video/mp4';
 
             if (!forceHtml5 && (src.includes('youtube.com') || src.includes('youtu.be'))) {
                 const embedUrl = convertYouTubeUrl(src);
@@ -841,8 +859,8 @@
                     </div>`;
             }
 
-            return `<video controls muted crossorigin="anonymous" style="outline: none;">
-                <source src="${playbackSrc}" type="video/mp4">
+            return `<video controls muted crossorigin="anonymous" preload="metadata" playsinline webkit-playsinline="true" style="outline: none;">
+                <source src="${playbackSrc}" type="${playbackType}">
                 <track kind="captions" srclang="en" label="English" default>
                 Your browser does not support the video tag.
             </video>`;

@@ -410,6 +410,7 @@
             <button class="btn" onclick="document.getElementById('fileInput').click()">Upload Files</button>
             <div class="global-controls">
                 <button class="btn" onclick="togglePlaylistModule()" style="background: #6c5ce7;">Playlist Extractor</button>
+                <button class="btn" onclick="toggleBulkModule()" style="background: #20bf6b;">Bulk Import / Tabs</button>
                 <button class="btn" onclick="saveConfig()">Save Config</button>
                 <button class="btn" onclick="loadConfig()">Load Config</button>
                 <button class="btn danger" onclick="clearAll()">Clear All</button>
@@ -417,7 +418,35 @@
             <input type="file" id="configInput" accept=".json" style="display:none;">
         </div>
 
-        <div class="overlay" id="modalOverlay" onclick="togglePlaylistModule()"></div>
+        <div class="overlay" id="modalOverlay" onclick="closeAllModules()"></div>
+
+        <div class="module-container" id="bulkImportModule">
+            <div class="module-glass">
+                <div class="module-header">
+                    <h3>Bulk Link Importer & Tab Extractor</h3>
+                    <button class="close-btn" onclick="toggleBulkModule()">×</button>
+                </div>
+                <div class="module-content">
+                    <p style="font-size: 12px; color: #888; margin-bottom: 10px;">Paste URLs from your open tabs or clipboard. All video links will be resolved to direct files.</p>
+                    <textarea id="bulkUrlInput" placeholder="Paste multiple URLs here (one per line, space or comma separated)..." class="module-input" style="height: 120px;"></textarea>
+                    <div class="module-actions">
+                        <button class="btn" onclick="extractBulkLinks()" style="background: #20bf6b;">Resolve All Links</button>
+                    </div>
+                    <div class="progress-bar" id="bulkProgress">
+                        <div class="progress-fill" id="bulkProgressFill"></div>
+                    </div>
+                    <div class="results-container">
+                        <textarea id="bulkResults" readonly placeholder="Resolved direct links will appear here..."></textarea>
+                    </div>
+                    <div class="module-footer">
+                        <button class="btn" id="bulkCopyLinksBtn" onclick="copyBulkLinks()" disabled>Copy All Links</button>
+                        <button class="btn" id="bulkAddAllBtn" onclick="addAllBulkToGrid()" disabled style="background: #27ae60;">Add All to Grid</button>
+                        <button class="btn danger" onclick="clearBulkResults()">Clear</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <div class="module-container" id="playlistModule">
             <div class="module-glass">
                 <div class="module-header">
@@ -1357,6 +1386,137 @@
             }
             
             togglePlaylistModule();
+        }
+
+        // Bulk Module Functions
+        function closeAllModules() {
+            document.getElementById('bulkImportModule').style.display = 'none';
+            document.getElementById('playlistModule').style.display = 'none';
+            document.getElementById('modalOverlay').style.display = 'none';
+        }
+
+        function toggleBulkModule() {
+            const module = document.getElementById('bulkImportModule');
+            const overlay = document.getElementById('modalOverlay');
+            const isVisible = module.style.display === 'block';
+            
+            closeAllModules();
+            if (!isVisible) {
+                module.style.display = 'block';
+                overlay.style.display = 'block';
+            }
+        }
+
+        function togglePlaylistModule() {
+            const module = document.getElementById('playlistModule');
+            const overlay = document.getElementById('modalOverlay');
+            const isVisible = module.style.display === 'block';
+            
+            closeAllModules();
+            if (!isVisible) {
+                module.style.display = 'block';
+                overlay.style.display = 'block';
+            }
+        }
+
+        let bulkExtractedLinks = [];
+        let bulkResolvedLinks = [];
+
+        async function extractBulkLinks() {
+            const input = document.getElementById('bulkUrlInput');
+            const resultsArea = document.getElementById('bulkResults');
+            const progress = document.getElementById('bulkProgress');
+            const fill = document.getElementById('bulkProgressFill');
+            
+            const rawText = input.value.trim();
+            if (!rawText) {
+                showNotification('Please enter at least one URL', 'warning');
+                return;
+            }
+
+            // Extract valid URLs from text (handles spaces, commas, newlines)
+            const lines = rawText.split(/[\n,\s]+/).map(l => l.trim()).filter(l => l && isValidUrl(l));
+            
+            if (lines.length === 0) {
+                showNotification('No valid URLs found', 'warning');
+                return;
+            }
+
+            resultsArea.value = `Found ${lines.length} URLs. Starting resolution...\n\n`;
+            progress.style.display = 'block';
+            
+            bulkExtractedLinks = lines;
+            bulkResolvedLinks = [];
+            
+            document.getElementById('bulkAddAllBtn').disabled = true;
+            document.getElementById('bulkCopyLinksBtn').disabled = true;
+
+            for (let i = 0; i < lines.length; i++) {
+                const url = lines[i];
+                const percentage = ((i + 1) / lines.length) * 100;
+                fill.style.width = `${percentage}%`;
+
+                if (isPmvhavenVideoUrl(url)) {
+                    try {
+                        const resolved = await resolvePmvhavenUrl(url);
+                        if (resolved && resolved.streamUrl) {
+                            const directLink = window.location.origin + resolved.streamUrl;
+                            bulkResolvedLinks.push(directLink);
+                            resultsArea.value += `${directLink}\n`;
+                        } else {
+                            resultsArea.value += `Failed: ${url}\n`;
+                        }
+                    } catch (e) {
+                        resultsArea.value += `Error: ${url} (${e.message})\n`;
+                    }
+                } else {
+                    // Non-PMVHaven link, just add as is
+                    bulkResolvedLinks.push(url);
+                    resultsArea.value += `${url}\n`;
+                }
+                
+                // Small delay to be respectful
+                await new Promise(r => setTimeout(r, 300));
+            }
+
+            showNotification(`Resolution complete! ${bulkResolvedLinks.length} links ready.`);
+            document.getElementById('bulkAddAllBtn').disabled = false;
+            document.getElementById('bulkCopyLinksBtn').disabled = false;
+            setTimeout(() => { progress.style.display = 'none'; fill.style.width = '0%'; }, 1000);
+        }
+
+        function copyBulkLinks() {
+            const resultsArea = document.getElementById('bulkResults');
+            resultsArea.select();
+            document.execCommand('copy');
+            showNotification('Links copied to clipboard!');
+        }
+
+        function clearBulkResults() {
+            document.getElementById('bulkResults').value = '';
+            document.getElementById('bulkUrlInput').value = '';
+            document.getElementById('bulkAddAllBtn').disabled = true;
+            document.getElementById('bulkCopyLinksBtn').disabled = true;
+            bulkExtractedLinks = [];
+            bulkResolvedLinks = [];
+        }
+
+        async function addAllBulkToGrid() {
+            const linksToAdd = bulkResolvedLinks.length > 0 ? bulkResolvedLinks : bulkExtractedLinks;
+            
+            if (linksToAdd.length === 0) return;
+            
+            showNotification(`Adding ${linksToAdd.length} videos to grid...`);
+            
+            for (const link of linksToAdd) {
+                if (link.includes('/stream?url=')) {
+                    addVideo(link, null, { forceHtml5: true });
+                } else {
+                    await addVideoWithResolution(link);
+                }
+            }
+            
+            toggleBulkModule();
         }
     </script>
 </body>

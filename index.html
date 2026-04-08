@@ -1,0 +1,1345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Multi-Video Grid Player</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #1a1a1a;
+            color: white;
+            overflow: hidden;
+        }
+
+        .container {
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .controls {
+            background: #2d2d2d;
+            padding: 15px;
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+        }
+
+        .controls.hidden {
+            display: none;
+        }
+
+        .url-input {
+            flex: 1;
+            padding: 10px;
+            border: none;
+            border-radius: 5px;
+            background: #404040;
+            color: white;
+            font-size: 14px;
+            transition: all 0.3s;
+            position: relative;
+        }
+
+        .url-input::placeholder {
+            color: #888;
+        }
+
+        .url-input.dragover {
+            background: #1e3a5f;
+            border: 2px dashed #007acc;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            background: #007acc;
+            color: white;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.3s;
+        }
+
+        .btn:hover {
+            background: #005c99;
+        }
+
+        .btn.danger {
+            background: #dc3545;
+        }
+
+        .btn.danger:hover {
+            background: #c82333;
+        }
+
+        .slot-select {
+            min-width: 140px;
+            padding: 10px;
+            border: none;
+            border-radius: 5px;
+            background: #404040;
+            color: white;
+            font-size: 14px;
+        }
+
+        .drop-zone {
+            border: 2px dashed #555;
+            padding: 40px;
+            text-align: center;
+            margin: 20px;
+            border-radius: 10px;
+            transition: all 0.3s;
+            background: #2d2d2d;
+        }
+
+        .drop-zone.dragover {
+            border-color: #007acc;
+            background: #1e3a5f;
+        }
+
+        .video-grid {
+            flex: 1;
+            display: grid;
+            gap: 10px;
+            padding: 10px;
+            overflow: auto;
+        }
+
+        .video-item {
+            position: relative;
+            background: #2d2d2d;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+            border: 2px solid transparent;
+            cursor: pointer;
+        }
+
+        .video-item.selected-slot {
+            border-color: #00bcd4;
+            box-shadow: 0 0 0 2px rgba(0, 188, 212, 0.35);
+        }
+
+        .video-item video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        /* Hide video controls by default, show on hover */
+        .video-item video::-webkit-media-controls {
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .video-item:hover video::-webkit-media-controls {
+            opacity: 1;
+        }
+
+        .video-item video::-webkit-media-controls-enclosure {
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .video-item:hover video::-webkit-media-controls-enclosure {
+            opacity: 1;
+        }
+
+        /* Firefox */
+        .video-item video::-moz-media-controls {
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .video-item:hover video::-moz-media-controls {
+            opacity: 1;
+        }
+
+        .video-remove {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(220, 53, 69, 0.8);
+            border: none;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            color: white;
+            cursor: pointer;
+            font-size: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        .video-item:hover .video-remove {
+            opacity: 1;
+        }
+
+        .grid-1 { grid-template-columns: 1fr; }
+        .grid-2 { grid-template-columns: repeat(2, 1fr); }
+        .grid-3 { grid-template-columns: repeat(3, 1fr); }
+        .grid-4 { grid-template-columns: repeat(2, 1fr); grid-template-rows: repeat(2, 1fr); }
+        .grid-6 { grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(2, 1fr); }
+        .grid-9 { grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, 1fr); }
+
+        .embed-error {
+            background: #2d2d2d;
+            border: 2px dashed #ff6b6b;
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            height: 100%;
+            min-height: 200px;
+        }
+
+        .embed-error a {
+            color: #007acc;
+            text-decoration: none;
+            padding: 8px 16px;
+            background: #404040;
+            border-radius: 4px;
+            transition: background 0.3s;
+        }
+
+        .embed-error a:hover {
+            background: #505050;
+        }
+
+        .file-input {
+            display: none;
+        }
+
+        .global-controls {
+            display: flex;
+            gap: 10px;
+        }
+
+        .instructions {
+            color: #888;
+            font-size: 14px;
+            margin-top: 10px;
+        }
+
+        /* Playlist Extractor Module */
+        .module-container {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 2000;
+            width: 90%;
+            max-width: 600px;
+            animation: moduleFadeIn 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            display: none;
+        }
+
+        .module-glass {
+            background: rgba(35, 35, 35, 0.85);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            padding: 24px;
+            box-shadow: 0 12px 48px rgba(0, 0, 0, 0.7);
+        }
+
+        .module-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            padding-bottom: 12px;
+        }
+
+        .module-header h3 {
+            font-weight: 500;
+            letter-spacing: 0.5px;
+        }
+
+        .close-btn {
+            background: none;
+            border: none;
+            color: #888;
+            font-size: 28px;
+            cursor: pointer;
+            line-height: 1;
+            transition: all 0.2s;
+        }
+
+        .close-btn:hover {
+            color: white;
+            transform: scale(1.1);
+        }
+
+        .module-input {
+            width: 100%;
+            padding: 14px;
+            background: rgba(0, 0, 0, 0.4);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            color: white;
+            margin-bottom: 20px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+
+        .module-input:focus {
+            outline: none;
+            border-color: #007acc;
+        }
+
+        .module-actions {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+
+        .results-container {
+            position: relative;
+        }
+
+        #playlistResults {
+            width: 100%;
+            height: 220px;
+            background: rgba(0, 0, 0, 0.5);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 10px;
+            color: #e0e0e0;
+            padding: 12px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 12px;
+            line-height: 1.6;
+            resize: none;
+        }
+
+        .module-footer {
+            display: flex;
+            gap: 12px;
+            margin-top: 20px;
+            justify-content: flex-end;
+        }
+
+        .progress-bar {
+            height: 6px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 3px;
+            margin-bottom: 20px;
+            overflow: hidden;
+            display: none;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #007acc, #00c2ff);
+            width: 0%;
+            transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        @keyframes moduleFadeIn {
+            from { opacity: 0; transform: translate(-50%, -45%); }
+            to { opacity: 1; transform: translate(-50%, -50%); }
+        }
+
+        .btn.secondary { background: #454545; }
+        .btn.secondary:hover { background: #555555; }
+        
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            background: #333;
+        }
+
+        .overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(4px);
+            z-index: 1999;
+            display: none;
+        }
+
+        .controls-toggle {
+            position: fixed;
+            top: 8px;
+            right: 8px;
+            z-index: 1100;
+            width: 34px;
+            height: 34px;
+            border: none;
+            border-radius: 6px;
+            background: rgba(0, 0, 0, 0.6);
+            color: #fff;
+            cursor: pointer;
+            font-size: 16px;
+            line-height: 1;
+        }
+
+        .controls-toggle:hover {
+            background: rgba(0, 0, 0, 0.8);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="controls">
+            <input type="text" class="url-input" placeholder="Paste or drag video URLs here (YouTube, Vimeo, PMVHaven, direct video links)" id="urlInput">
+            <button class="btn" onclick="addVideoFromUrl()">Add Video</button>
+            <button class="btn" onclick="addPlaylistFromInput()">Add Playlist</button>
+            <select id="slotSelect" class="slot-select" title="Target tile for playlist">
+                <option value="">New Tile</option>
+            </select>
+            <input type="file" class="file-input" id="fileInput" accept="video/*" multiple>
+            <button class="btn" onclick="document.getElementById('fileInput').click()">Upload Files</button>
+            <div class="global-controls">
+                <button class="btn" onclick="togglePlaylistModule()" style="background: #6c5ce7;">Playlist Extractor</button>
+                <button class="btn" onclick="saveConfig()">Save Config</button>
+                <button class="btn" onclick="loadConfig()">Load Config</button>
+                <button class="btn danger" onclick="clearAll()">Clear All</button>
+            </div>
+            <input type="file" id="configInput" accept=".json" style="display:none;">
+        </div>
+
+        <div class="overlay" id="modalOverlay" onclick="togglePlaylistModule()"></div>
+        <div class="module-container" id="playlistModule">
+            <div class="module-glass">
+                <div class="module-header">
+                    <h3>PMVHaven Playlist Extractor</h3>
+                    <button class="close-btn" onclick="togglePlaylistModule()">×</button>
+                </div>
+                <div class="module-content">
+                    <input type="text" id="playlistUrlInput" placeholder="Paste PMVHaven playlist URL here..." class="module-input">
+                    <div class="module-actions">
+                        <button class="btn" onclick="extractPlaylist()">Extract Links</button>
+                        <button class="btn secondary" id="resolveAllBtn" onclick="resolveAllLinks()" disabled>Resolve Direct Links</button>
+                    </div>
+                    <div class="progress-bar" id="extractionProgress">
+                        <div class="progress-fill" id="progressFill"></div>
+                    </div>
+                    <div class="results-container">
+                        <textarea id="playlistResults" readonly placeholder="Extracted video page links will appear here..."></textarea>
+                    </div>
+                    <div class="module-footer">
+                        <button class="btn" id="copyLinksBtn" onclick="copyLinks()" disabled>Copy All Links</button>
+                        <button class="btn" id="addAllBtn" onclick="addAllToGrid()" disabled style="background: #27ae60;">Add All to Grid</button>
+                        <button class="btn danger" onclick="clearResults()">Clear</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="drop-zone" id="dropZone">
+            <h3>Drag & Drop Video Files, URLs, or Links Here</h3>
+            <p class="instructions">
+                Supports: MP4, WebM, AVI, MOV files or direct video URLs<br>
+                Platforms: YouTube, Vimeo, PMVHaven, and other video sites<br>
+                Drag from browser address bar, selected text, or anywhere on this page<br>
+                Features: Hover controls • CC enabled • Save/Load configs
+            </p>
+        </div>
+
+        <div class="video-grid" id="videoGrid"></div>
+    </div>
+    <button class="controls-toggle" id="controlsToggle" title="Hide controls">▴</button>
+
+    <script>
+        let videos = [];
+        let videoCounter = 0;
+        let selectedSlotId = '';
+        const slotPlaylists = new Map();
+        const GRIDPLAY_API_BASE = '/gridplay-api';
+
+        // Drag and drop functionality
+        const dropZone = document.getElementById('dropZone');
+        const videoGrid = document.getElementById('videoGrid');
+        const urlInput = document.getElementById('urlInput');
+        const fileInput = document.getElementById('fileInput');
+        const controls = document.querySelector('.controls');
+        const controlsToggle = document.getElementById('controlsToggle');
+        const slotSelect = document.getElementById('slotSelect');
+
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+
+        function highlight() {
+            dropZone.classList.add('dragover');
+        }
+
+        function unhighlight() {
+            dropZone.classList.remove('dragover');
+        }
+
+        function highlightInput() {
+            urlInput.classList.add('dragover');
+        }
+
+        function unhighlightInput() {
+            urlInput.classList.remove('dragover');
+        }
+
+        function handleDrop(e) {
+            const dt = e.dataTransfer;
+            const files = dt.files;
+            const text = dt.getData('text/plain') || dt.getData('text/uri-list') || dt.getData('text');
+
+            if (files.length > 0) {
+                handleFiles(files);
+            } else if (text) {
+                const urls = parseLinkList(text);
+                if (urls.length > 0) {
+                    urls.forEach(url => { addVideoWithResolution(url); });
+                } else if (isValidUrl(text.trim())) {
+                    addVideoWithResolution(text.trim());
+                }
+            }
+        }
+
+        function handleInputDrop(e) {
+            const dt = e.dataTransfer;
+            const text = dt.getData('text/plain') || dt.getData('text/uri-list') || dt.getData('text');
+
+            if (text) {
+                // For single URL drops on input, just add the first valid URL
+                const urls = parseLinkList(text);
+                if (urls.length > 0) {
+                    addVideoWithResolution(urls[0]);
+                } else if (isValidUrl(text.trim())) {
+                    addVideoWithResolution(text.trim());
+                }
+                // Clear the input field after drop
+                urlInput.value = '';
+            }
+        }
+
+        // Prevent default drag behaviors on entire document and URL input
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, preventDefaults, false);
+            urlInput.addEventListener(eventName, preventDefaults, false);
+            document.body.addEventListener(eventName, preventDefaults, false);
+            document.addEventListener(eventName, preventDefaults, false);
+        });
+
+        // Highlight drop zone when item is dragged over it
+        ['dragenter', 'dragover'].forEach(eventName => {
+            dropZone.addEventListener(eventName, highlight, false);
+            urlInput.addEventListener(eventName, highlightInput, false);
+            document.addEventListener(eventName, function(e) {
+                if (e.dataTransfer.types.includes('text/plain') || 
+                    e.dataTransfer.types.includes('text/uri-list') ||
+                    e.dataTransfer.files.length > 0) {
+                    highlight();
+                }
+            }, false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, unhighlight, false);
+            urlInput.addEventListener(eventName, unhighlightInput, false);
+            document.addEventListener(eventName, unhighlight, false);
+        });
+
+        // Handle dropped files/URLs on entire document and URL input
+        dropZone.addEventListener('drop', handleDrop, false);
+        urlInput.addEventListener('drop', handleInputDrop, false);
+        document.addEventListener('drop', handleDrop, false);
+
+        function handleFiles(files) {
+            [...files].forEach(file => {
+                if (file.type.startsWith('video/')) {
+                    const url = URL.createObjectURL(file);
+                    addVideo(url, file.name);
+                }
+            });
+        }
+
+        function isValidUrl(string) {
+            try {
+                new URL(string);
+                return true;
+            } catch (_) {
+                return false;
+            }
+        }
+
+        function parseLinkList(inputText) {
+            return inputText
+                .split(/[\s,]+/)
+                .map(item => item.trim())
+                .filter(item => item && isValidUrl(item));
+        }
+
+        function setSelectedSlot(videoId = '') {
+            selectedSlotId = videoId;
+            slotSelect.value = videoId;
+            document.querySelectorAll('.video-item').forEach(item => {
+                item.classList.toggle('selected-slot', item.id === videoId);
+            });
+        }
+
+        function refreshSlotOptions() {
+            const previous = selectedSlotId;
+            slotSelect.innerHTML = '<option value="">New Tile</option>';
+
+            videos.forEach((video, index) => {
+                const option = document.createElement('option');
+                option.value = video.id;
+                option.textContent = `Tile ${index + 1}`;
+                slotSelect.appendChild(option);
+            });
+
+            if (previous && videos.some(video => video.id === previous)) {
+                setSelectedSlot(previous);
+            } else {
+                setSelectedSlot('');
+            }
+        }
+
+        function bindSlotSelection(videoItem) {
+            videoItem.addEventListener('click', function(e) {
+                if (e.target.closest('.video-remove')) {
+                    return;
+                }
+                setSelectedSlot(videoItem.id);
+            });
+        }
+
+        function convertYouTubeUrl(url) {
+            // Handle various YouTube URL formats
+            let videoId = null;
+            
+            // Standard watch URLs
+            const watchRegex = /(?:youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/;
+            let match = url.match(watchRegex);
+            
+            if (match) {
+                videoId = match[1];
+            } else {
+                // YouTube Shorts
+                const shortsRegex = /youtube\.com\/shorts\/([a-zA-Z0-9_-]{11})/;
+                match = url.match(shortsRegex);
+                
+                if (match) {
+                    videoId = match[1];
+                } else {
+                    // Embed URLs
+                    const embedRegex = /youtube\.com\/embed\/([a-zA-Z0-9_-]{11})/;
+                    match = url.match(embedRegex);
+                    
+                    if (match) {
+                        videoId = match[1];
+                    } else {
+                        // Channel or other YouTube URLs - try to extract from various parameters
+                        const paramRegex = /[?&]v=([a-zA-Z0-9_-]{11})/;
+                        match = url.match(paramRegex);
+                        if (match) {
+                            videoId = match[1];
+                        }
+                    }
+                }
+            }
+            
+            if (videoId && videoId.length === 11) {
+                return `https://www.youtube.com/embed/${videoId}?rel=0&modestbranding=1&cc_load_policy=1`;
+            }
+            
+            return url;
+        }
+
+        function convertPornhubUrl(url) {
+            // Extract video ID from Pornhub URLs
+            const regExp = /pornhub\.com\/view_video\.php\?viewkey=([a-zA-Z0-9]+)/;
+            const match = url.match(regExp);
+            
+            if (match && match[1]) {
+                return `https://www.pornhub.com/embed/${match[1]}`;
+            }
+            return url;
+        }
+
+        function convertVimeoUrl(url) {
+            // Extract video ID from Vimeo URLs
+            const regExp = /vimeo\.com\/(\d+)/;
+            const match = url.match(regExp);
+            
+            if (match && match[1]) {
+                return `https://player.vimeo.com/video/${match[1]}`;
+            }
+            return url;
+        }
+
+        function getNormalizedUrl(url) {
+            try {
+                return new URL(url);
+            } catch (_) {
+                return null;
+            }
+        }
+
+        function isPmvhavenVideoUrl(url) {
+            const parsed = getNormalizedUrl(url);
+            if (!parsed) {
+                return false;
+            }
+
+            const host = parsed.hostname.toLowerCase();
+            if (host !== 'pmvhaven.com' && host !== 'www.pmvhaven.com') {
+                return false;
+            }
+
+            return parsed.pathname.includes('/video/') || parsed.pathname.includes('/videos/');
+        }
+
+        async function resolvePmvhavenUrl(url) {
+            const response = await fetch(`${GRIDPLAY_API_BASE}/resolve?url=${encodeURIComponent(url)}`);
+            let payload = null;
+
+            try {
+                payload = await response.json();
+            } catch (_) {
+                payload = null;
+            }
+
+            if (!response.ok || !payload || !payload.streamUrl) {
+                const message = payload && payload.error
+                    ? payload.error
+                    : 'Could not resolve PMVHaven video URL.';
+                throw new Error(message);
+            }
+
+            return payload;
+        }
+
+        async function addVideoWithResolution(src, name = null) {
+            if (!isPmvhavenVideoUrl(src)) {
+                addVideo(src, name);
+                return;
+            }
+
+            try {
+                const resolved = await resolvePmvhavenUrl(src);
+                addVideo(src, name, {
+                    forceHtml5: true,
+                    playbackSrc: resolved.streamUrl
+                });
+            } catch (error) {
+                addPmvhavenResolveError(src, name);
+                showNotification(error.message || 'PMVHaven video could not be loaded', 'warning');
+            }
+        }
+
+        function addPmvhavenResolveError(src, name = null) {
+            videoCounter++;
+            const videoId = `video-${videoCounter}`;
+
+            const videoItem = document.createElement('div');
+            videoItem.className = 'video-item';
+            videoItem.id = videoId;
+            videoItem.innerHTML = `
+                <div class="embed-error" style="padding:20px; text-align:center; color:#ff6b6b;">
+                    <p>PMVHaven video could not be resolved for in-grid playback.</p>
+                    <p style="font-size:12px; margin-top:10px;">
+                        <a href="${src}" target="_blank" rel="noopener noreferrer" style="color:#007acc;">Open PMVHaven page</a>
+                    </p>
+                </div>
+                <button class="video-remove" onclick="removeVideo('${videoId}')" title="Remove video">×</button>
+            `;
+
+            videos.push({
+                id: videoId,
+                src: src,
+                name: name || `Video ${videoCounter}`
+            });
+
+            videoGrid.appendChild(videoItem);
+            bindSlotSelection(videoItem);
+            updateGridLayout();
+            hideDropZone();
+        }
+
+        function buildVideoMarkup(src, videoId, options = {}) {
+            const playbackSrc = options.playbackSrc || src;
+            const forceHtml5 = options.forceHtml5 === true;
+
+            if (!forceHtml5 && (src.includes('youtube.com') || src.includes('youtu.be'))) {
+                const embedUrl = convertYouTubeUrl(src);
+                return `
+                    <iframe src="${embedUrl}"
+                            frameborder="0"
+                            allowfullscreen
+                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                            style="width:100%;height:100%;"
+                            onerror="handleEmbedErrorAndContinue('${videoId}')">
+                    </iframe>
+                    <div class="embed-error" id="error-${videoId}" style="display:none; padding:20px; text-align:center; color:#ff6b6b;">
+                        <p>⚠ This YouTube video cannot be embedded</p>
+                        <p style="font-size:12px; margin-top:10px;">
+                            <a href="${src}" target="_blank" rel="noopener noreferrer" style="color:#007acc;">Open in new tab</a>
+                        </p>
+                    </div>`;
+            }
+
+            if (!forceHtml5 && src.includes('pornhub.com')) {
+                const embedUrl = convertPornhubUrl(src);
+                return `
+                    <iframe src="${embedUrl}"
+                            frameborder="0"
+                            allowfullscreen
+                            style="width:100%;height:100%;"
+                            onerror="handleEmbedErrorAndContinue('${videoId}')">
+                    </iframe>
+                    <div class="embed-error" id="error-${videoId}" style="display:none; padding:20px; text-align:center; color:#ff6b6b;">
+                        <p>⚠ This video cannot be embedded</p>
+                        <p style="font-size:12px; margin-top:10px;">
+                            <a href="${src}" target="_blank" rel="noopener noreferrer" style="color:#007acc;">Open in new tab</a>
+                        </p>
+                    </div>`;
+            }
+
+            if (!forceHtml5 && src.includes('vimeo.com')) {
+                const embedUrl = convertVimeoUrl(src);
+                return `
+                    <iframe src="${embedUrl}"
+                            frameborder="0"
+                            allowfullscreen
+                            allow="autoplay; fullscreen; picture-in-picture"
+                            style="width:100%;height:100%;">
+                    </iframe>`;
+            }
+
+            if (!forceHtml5 && (src.includes('adult') || src.includes('xxx') || src.toLowerCase().includes('porn'))) {
+                return `
+                    <iframe src="${src}"
+                            frameborder="0"
+                            allowfullscreen
+                            style="width:100%;height:100%;"
+                            onerror="handleEmbedErrorAndContinue('${videoId}')">
+                    </iframe>
+                    <div class="embed-error" id="error-${videoId}" style="display:none; padding:20px; text-align:center; color:#ff6b6b;">
+                        <p>⚠ This video cannot be embedded</p>
+                        <p style="font-size:12px; margin-top:10px;">
+                            <a href="${src}" target="_blank" rel="noopener noreferrer" style="color:#007acc;">Open in new tab</a>
+                        </p>
+                    </div>`;
+            }
+
+            return `<video controls muted crossorigin="anonymous" style="outline: none;">
+                <source src="${playbackSrc}" type="video/mp4">
+                <track kind="captions" srclang="en" label="English" default>
+                Your browser does not support the video tag.
+            </video>`;
+        }
+
+        function wireMediaEvents(videoId) {
+            const videoItem = document.getElementById(videoId);
+            if (!videoItem) {
+                return;
+            }
+
+            const video = videoItem.querySelector('video');
+            if (video) {
+                video.addEventListener('loadedmetadata', function() {
+                    if (video.textTracks && video.textTracks.length > 0) {
+                        for (let i = 0; i < video.textTracks.length; i++) {
+                            video.textTracks[i].mode = 'showing';
+                        }
+                    }
+                });
+
+                video.addEventListener('ended', function() {
+                    advancePlaylist(videoId);
+                });
+
+                video.addEventListener('error', function() {
+                    advancePlaylist(videoId);
+                });
+            }
+        }
+
+        function updateVideoSlotContent(videoId, src, name = null, options = {}) {
+            const videoItem = document.getElementById(videoId);
+            if (!videoItem) {
+                return;
+            }
+
+            const videoElement = buildVideoMarkup(src, videoId, options);
+            videoItem.innerHTML = `
+                ${videoElement}
+                <button class="video-remove" onclick="removeVideo('${videoId}')" title="Remove video">×</button>
+            `;
+            bindSlotSelection(videoItem);
+
+            const index = videos.findIndex(v => v.id === videoId);
+            if (index !== -1) {
+                videos[index].src = src;
+                if (name) {
+                    videos[index].name = name;
+                }
+            }
+
+            wireMediaEvents(videoId);
+        }
+
+        function addVideo(src, name = null, options = {}) {
+            videoCounter++;
+            const videoId = `video-${videoCounter}`;
+
+            const videoItem = document.createElement('div');
+            videoItem.className = 'video-item';
+            videoItem.id = videoId;
+            videoGrid.appendChild(videoItem);
+
+            videos.push({
+                id: videoId,
+                src: src,
+                name: name || `Video ${videoCounter}`
+            });
+
+            updateVideoSlotContent(videoId, src, name, options);
+            bindSlotSelection(videoItem);
+            updateGridLayout();
+            hideDropZone();
+        }
+
+        async function loadSourceIntoSlot(videoId, src, name = null) {
+            if (!isPmvhavenVideoUrl(src)) {
+                updateVideoSlotContent(videoId, src, name);
+                return true;
+            }
+
+            try {
+                const resolved = await resolvePmvhavenUrl(src);
+                updateVideoSlotContent(videoId, src, name, {
+                    forceHtml5: true,
+                    playbackSrc: resolved.streamUrl
+                });
+                return true;
+            } catch (error) {
+                const videoItem = document.getElementById(videoId);
+                if (videoItem) {
+                    videoItem.innerHTML = `
+                        <div class="embed-error" style="padding:20px; text-align:center; color:#ff6b6b;">
+                            <p>PMVHaven video could not be resolved for in-grid playback.</p>
+                            <p style="font-size:12px; margin-top:10px;">
+                                <a href="${src}" target="_blank" rel="noopener noreferrer" style="color:#007acc;">Open PMVHaven page</a>
+                            </p>
+                        </div>
+                        <button class="video-remove" onclick="removeVideo('${videoId}')" title="Remove video">×</button>
+                    `;
+                    bindSlotSelection(videoItem);
+                }
+
+                showNotification(error.message || 'PMVHaven video could not be loaded', 'warning');
+                return false;
+            }
+        }
+
+        async function advancePlaylist(videoId) {
+            const playlist = slotPlaylists.get(videoId);
+            if (!playlist || playlist.queue.length === 0) {
+                return;
+            }
+
+            const next = playlist.queue.shift();
+            const loaded = await loadSourceIntoSlot(videoId, next.src);
+
+            if (!loaded) {
+                advancePlaylist(videoId);
+                return;
+            }
+
+            if (playlist.queue.length === 0) {
+                slotPlaylists.delete(videoId);
+            }
+        }
+
+        async function addPlaylistFromInput() {
+            const raw = urlInput.value.trim();
+            const urls = parseLinkList(raw);
+
+            if (urls.length === 0) {
+                showNotification('No valid URLs found for playlist', 'warning');
+                return;
+            }
+
+            let targetSlotId = slotSelect.value;
+
+            if (!targetSlotId) {
+                await addVideoWithResolution(urls[0]);
+                targetSlotId = videos[videos.length - 1].id;
+                if (urls.length > 1) {
+                    slotPlaylists.set(targetSlotId, {
+                        queue: urls.slice(1).map(src => ({ src }))
+                    });
+                } else {
+                    slotPlaylists.delete(targetSlotId);
+                }
+            } else {
+                const loaded = await loadSourceIntoSlot(targetSlotId, urls[0]);
+                if (!loaded) {
+                    showNotification('Failed to load first playlist item', 'warning');
+                    return;
+                }
+                if (urls.length > 1) {
+                    slotPlaylists.set(targetSlotId, {
+                        queue: urls.slice(1).map(src => ({ src }))
+                    });
+                } else {
+                    slotPlaylists.delete(targetSlotId);
+                }
+            }
+
+            setSelectedSlot(targetSlotId);
+            urlInput.value = '';
+            showNotification(`Playlist queued in selected tile (${urls.length} links)`);
+        }
+
+        function handleEmbedError(videoId) {
+            const iframe = document.querySelector(`#${videoId} iframe`);
+            const errorDiv = document.getElementById(`error-${videoId}`);
+            if (iframe && errorDiv) {
+                iframe.style.display = 'none';
+                errorDiv.style.display = 'block';
+            }
+        }
+
+        function handleEmbedErrorAndContinue(videoId) {
+            handleEmbedError(videoId);
+            advancePlaylist(videoId);
+        }
+
+        function removeVideo(videoId) {
+            const videoElement = document.getElementById(videoId);
+            if (videoElement) {
+                videoElement.remove();
+                videos = videos.filter(v => v.id !== videoId);
+                slotPlaylists.delete(videoId);
+                if (selectedSlotId === videoId) {
+                    selectedSlotId = '';
+                }
+                updateGridLayout();
+                refreshSlotOptions();
+                
+                if (videos.length === 0) {
+                    showDropZone();
+                }
+            }
+        }
+
+        function updateGridLayout() {
+            const count = videos.length;
+            videoGrid.className = 'video-grid';
+            
+            if (count === 0) return;
+            if (count === 1) videoGrid.classList.add('grid-1');
+            else if (count === 2) videoGrid.classList.add('grid-2');
+            else if (count === 3) videoGrid.classList.add('grid-3');
+            else if (count <= 4) videoGrid.classList.add('grid-4');
+            else if (count <= 6) videoGrid.classList.add('grid-6');
+            else videoGrid.classList.add('grid-9');
+
+            refreshSlotOptions();
+        }
+
+        function hideDropZone() {
+            dropZone.style.display = 'none';
+        }
+
+        function showDropZone() {
+            dropZone.style.display = 'block';
+        }
+
+        async function addVideoFromUrl() {
+            const url = urlInput.value.trim();
+            if (url) {
+                await addVideoWithResolution(url);
+                urlInput.value = '';
+            }
+        }
+
+        function showNotification(message, type = 'info') {
+            const notification = document.createElement('div');
+            notification.className = `notification ${type}`;
+            notification.textContent = message;
+            notification.style.cssText = `
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                background: ${type === 'warning' ? '#ff9800' : '#4caf50'};
+                color: white;
+                padding: 12px 20px;
+                border-radius: 5px;
+                z-index: 1000;
+                font-size: 14px;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+                transition: opacity 0.3s;
+            `;
+            
+            document.body.appendChild(notification);
+            
+            setTimeout(() => {
+                notification.style.opacity = '0';
+                setTimeout(() => {
+                    if (notification.parentNode) {
+                        notification.parentNode.removeChild(notification);
+                    }
+                }, 300);
+            }, 3000);
+        }
+
+        function saveConfig() {
+            const now = new Date();
+            const timestamp = now.toISOString().replace(/[:.]/g, '-').split('T')[0] + '_' + 
+                             now.toTimeString().split(' ')[0].replace(/:/g, '-');
+            
+            const config = {
+                videos: videos,
+                timestamp: now.toISOString(),
+                version: '1.0'
+            };
+            
+            const dataStr = JSON.stringify(config, null, 2);
+            const dataBlob = new Blob([dataStr], {type: 'application/json'});
+            
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(dataBlob);
+            link.download = `multi-video-config-${timestamp}.json`;
+            link.click();
+            
+            showNotification(`Configuration saved! (${videos.length} videos)`);
+        }
+
+        function loadConfig() {
+            document.getElementById('configInput').click();
+        }
+
+        function handleConfigLoad(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            
+            const reader = new FileReader();
+            reader.onload = async function(e) {
+                try {
+                    const config = JSON.parse(e.target.result);
+                    
+                    if (config.videos && Array.isArray(config.videos)) {
+                        // Clear existing videos
+                        clearAll();
+                        
+                        // Load videos from config
+                        for (const videoData of config.videos) {
+                            await addVideoWithResolution(videoData.src, videoData.name);
+                        }
+                        
+                        showNotification(`Configuration loaded! (${config.videos.length} videos)`);
+                    } else {
+                        showNotification('Invalid configuration file', 'warning');
+                    }
+                } catch (error) {
+                    showNotification('Error loading configuration file', 'warning');
+                    console.error('Config load error:', error);
+                }
+            };
+            reader.readAsText(file);
+            
+            // Reset file input
+            event.target.value = '';
+        }
+
+        function clearAll() {
+            videos = [];
+            videoGrid.innerHTML = '';
+            updateGridLayout();
+            showDropZone();
+        }
+
+        // Handle file input
+        fileInput.addEventListener('change', function(e) {
+            handleFiles(e.target.files);
+        });
+
+        // Handle config file input
+        document.getElementById('configInput').addEventListener('change', handleConfigLoad);
+
+        // Handle Enter key in URL input
+        urlInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                const urls = parseLinkList(urlInput.value.trim());
+                if (urls.length > 1) {
+                    addPlaylistFromInput();
+                } else {
+                    addVideoFromUrl();
+                }
+            }
+        });
+
+        // Handle paste in URL input
+        urlInput.addEventListener('paste', function(e) {
+            setTimeout(async () => {
+                const raw = e.target.value.trim();
+                const urls = parseLinkList(raw);
+                if (urls.length > 1) {
+                    await addPlaylistFromInput();
+                } else if (urls.length === 1) {
+                    await addVideoWithResolution(urls[0]);
+                    e.target.value = '';
+                }
+            }, 100);
+        });
+
+        slotSelect.addEventListener('change', function(e) {
+            setSelectedSlot(e.target.value);
+        });
+
+        controlsToggle.addEventListener('click', function() {
+            const hidden = controls.classList.toggle('hidden');
+            controlsToggle.textContent = hidden ? '▾' : '▴';
+            controlsToggle.title = hidden ? 'Show controls' : 'Hide controls';
+        });
+
+        refreshSlotOptions();
+
+        // Playlist Module Functions
+        function togglePlaylistModule() {
+            const module = document.getElementById('playlistModule');
+            const overlay = document.getElementById('modalOverlay');
+            const isVisible = module.style.display === 'block';
+            
+            module.style.display = isVisible ? 'none' : 'block';
+            overlay.style.display = isVisible ? 'none' : 'block';
+        }
+
+        async function extractPlaylist() {
+            const urlInput = document.getElementById('playlistUrlInput');
+            const resultsArea = document.getElementById('playlistResults');
+            const url = urlInput.value.trim();
+            
+            if (!url || !isValidUrl(url)) {
+                showNotification('Please enter a valid playlist URL', 'warning');
+                return;
+            }
+
+            resultsArea.value = 'Fetching playlist content...';
+            document.getElementById('resolveAllBtn').disabled = true;
+            document.getElementById('copyLinksBtn').disabled = true;
+            document.getElementById('addAllBtn').disabled = true;
+
+            try {
+                const response = await fetch(`${GRIDPLAY_API_BASE}/playlist?url=${encodeURIComponent(url)}`);
+                const data = await response.json();
+
+                if (!response.ok) throw new Error(data.error || 'Failed to extract playlist');
+
+                if (data.links && data.links.length > 0) {
+                    extractedLinks = data.links;
+                    resultsArea.value = data.links.join('\n');
+                    showNotification(`Found ${data.links.length} video links!`);
+                    
+                    document.getElementById('resolveAllBtn').disabled = false;
+                    document.getElementById('copyLinksBtn').disabled = false;
+                    document.getElementById('addAllBtn').disabled = false;
+                } else {
+                    resultsArea.value = 'No video links found in this playlist.';
+                }
+            } catch (error) {
+                resultsArea.value = `Error: ${error.message}`;
+                showNotification(error.message, 'warning');
+            }
+        }
+
+        let extractedLinks = [];
+        let resolvedLinks = [];
+
+        async function resolveAllLinks() {
+            if (extractedLinks.length === 0) return;
+
+            const resultsArea = document.getElementById('playlistResults');
+            const progress = document.getElementById('extractionProgress');
+            const fill = document.getElementById('progressFill');
+            
+            progress.style.display = 'block';
+            resolvedLinks = [];
+            resultsArea.value = 'Resolving direct links (this may take a while)...\n\n';
+            
+            document.getElementById('resolveAllBtn').disabled = true;
+            
+            for (let i = 0; i < extractedLinks.length; i++) {
+                const link = extractedLinks[i];
+                const percentage = ((i + 1) / extractedLinks.length) * 100;
+                fill.style.width = `${percentage}%`;
+
+                try {
+                    const resolved = await resolvePmvhavenUrl(link);
+                    if (resolved && resolved.streamUrl) {
+                        const directLink = window.location.origin + resolved.streamUrl;
+                        resolvedLinks.push(directLink);
+                        resultsArea.value += `${directLink}\n`;
+                    }
+                } catch (error) {
+                    resultsArea.value += `Failed: ${link}\n`;
+                }
+                
+                // Small delay to be respectful
+                await new Promise(r => setTimeout(r, 500));
+            }
+            
+            showNotification(`Resolution complete! ${resolvedLinks.length} direct links found.`);
+            setTimeout(() => { progress.style.display = 'none'; fill.style.width = '0%'; }, 1000);
+        }
+
+        function copyLinks() {
+            const resultsArea = document.getElementById('playlistResults');
+            resultsArea.select();
+            document.execCommand('copy');
+            showNotification('Links copied to clipboard!');
+        }
+
+        function clearResults() {
+            document.getElementById('playlistResults').value = '';
+            document.getElementById('playlistUrlInput').value = '';
+            document.getElementById('resolveAllBtn').disabled = true;
+            document.getElementById('copyLinksBtn').disabled = true;
+            document.getElementById('addAllBtn').disabled = true;
+            extractedLinks = [];
+            resolvedLinks = [];
+        }
+
+        async function addAllToGrid() {
+            const linksToAdd = resolvedLinks.length > 0 ? resolvedLinks : extractedLinks;
+            
+            if (linksToAdd.length === 0) return;
+            
+            showNotification(`Adding ${linksToAdd.length} videos to grid...`);
+            
+            for (const link of linksToAdd) {
+                // If they are already direct stream links, we can add them directly
+                if (link.includes('/stream?url=')) {
+                    addVideo(link, null, { forceHtml5: true });
+                } else {
+                    await addVideoWithResolution(link);
+                }
+            }
+            
+            togglePlaylistModule();
+        }
+    </script>
+</body>
+</html>

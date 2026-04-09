@@ -497,8 +497,10 @@ async function handleStream(req, reqUrl, res) {
 
     try {
         const headers = {
-            'User-Agent': 'GridPlayProxy/1.0 (+https://h-town.duckdns.org/gridplay/)',
-            Referer: 'https://pmvhaven.com/'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+            'Referer': 'https://pmvhaven.com/',
+            'Accept': '*/*',
+            'Origin': 'https://pmvhaven.com'
         };
         const range = req.headers.range;
         if (range) {
@@ -537,8 +539,9 @@ async function handleStream(req, reqUrl, res) {
 
         responseHeaders['X-GridPlay-Proxy'] = 'pmvhaven';
 
-        const contentType = upstream.headers.get('content-type') || '';
-        const isM3u8 = contentType.includes('mpegurl') || mediaUrl.includes('.m3u8');
+        const contentType = (upstream.headers.get('content-type') || '').toLowerCase();
+        const mediaUrlStr = mediaUrl.toString().toLowerCase();
+        const isM3u8 = contentType.includes('mpegurl') || contentType.includes('m3u8') || mediaUrlStr.includes('.m3u8');
 
         if (isM3u8 && req.method !== 'HEAD' && upstream.body) {
             const body = await upstream.text();

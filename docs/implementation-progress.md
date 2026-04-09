@@ -91,3 +91,28 @@
 
 - Playlist extraction in the unified flow intentionally triggers only when exactly one URL is pasted and it is PMVHaven playlist-like; mixed/multi-input batches stay on the existing identify/import path.
 - Legacy `playlistModule` UI remains in code for low-risk fallback but is no longer exposed via a dedicated topbar action.
+
+## Wave 5 (V2 radial tile menu MVP)
+
+- **Timestamp:** 2026-04-09T15:50:51+02:00
+- **Scope:** Add a per-tile central draggable radial action menu (HTML5 + iframe tiles) with quality/reload/next/favorite/remember actions while preserving existing remove/audio/retry/global flows.
+- **Files changed:**
+  - `v2/index.html`
+  - `docs/implementation-progress.md`
+
+## Verification Steps (manual)
+
+- Add mixed tile types (direct HTML5, iframe/embed, PMVHaven resolved/error) and confirm each tile renders a center round menu button with tooltip text for Shift+Left Click move, Left Click open menu, and Right Click audio switch.
+- Left-click each tile menu button to open/close radial actions and confirm outside-click closes open menu.
+- Hold Shift and drag the menu button to multiple positions and confirm the button stays within tile bounds and keeps position after tile updates/resizes.
+- Right-click the menu button (and tile background) to confirm browser context menu is suppressed and audio focus advances to the next HTML5 tile.
+- Click quality action repeatedly to cycle low/medium/high; verify glow intensity changes, HLS tiles apply closest level selection, and non-HLS tiles show unobtrusive "saved for future HLS" hint.
+- Click reload action and confirm tile source reloads through existing load/retry pipeline.
+- Click next action with and without queue/global playlist to confirm queued/global advance behavior and "no queued next item" feedback.
+- Click favorite and remember actions to confirm per-source toggle state reflects active/inactive and persists via localStorage across reload.
+
+## Known Limitations
+
+- Favorite/remember persistence is localStorage-only and keyed by current tile source URL; there is no dedupe beyond URL exact-match normalization in this MVP.
+- Quality control applies directly only when `video.hls` levels are available; non-HLS media stores preference state but cannot force browser-level quality selection.
+- Validation for `v2/index.html` remains manual (plus inline script syntax check) with no browser automation added in this wave.

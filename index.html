@@ -336,6 +336,51 @@
             justify-content: flex-end;
         }
 
+        .module-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 12px;
+            margin-bottom: 14px;
+        }
+
+        .module-field label {
+            display: block;
+            font-size: 12px;
+            color: #b7b7b7;
+            margin-bottom: 6px;
+        }
+
+        .module-field.full {
+            grid-column: span 2;
+        }
+
+        .module-switch {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
+            color: #ddd;
+        }
+
+        .module-note {
+            font-size: 12px;
+            color: #9bb4d6;
+            margin-bottom: 12px;
+        }
+
+        #pawgMixStatus {
+            width: 100%;
+            height: 90px;
+            background: rgba(0, 0, 0, 0.5);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 10px;
+            color: #e0e0e0;
+            padding: 12px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 12px;
+            resize: none;
+        }
+
         .progress-bar {
             height: 6px;
             background: rgba(255, 255, 255, 0.05);
@@ -426,6 +471,7 @@
             <div class="global-controls">
                 <button class="btn" onclick="togglePlaylistModule()" style="background: #6c5ce7;">Playlist Extractor</button>
                 <button class="btn" onclick="toggleBulkModule()" style="background: #20bf6b;">Bulk Import / Tabs</button>
+                <button class="btn" onclick="togglePawgMixModule()" style="background: #8e44ad;">Generate PAWG Mix</button>
                 <button class="btn" onclick="toggleGlobalPlaylistModule()" style="background: #e67e22;">Global Playlist</button>
                 <button class="btn" onclick="saveConfig()">Save Config</button>
                 <button class="btn" onclick="loadConfig()">Load Config</button>
@@ -523,6 +569,51 @@
             </div>
         </div>
 
+        <div class="module-container" id="pawgMixModule">
+            <div class="module-glass">
+                <div class="module-header">
+                    <h3>PAWG PMV Auto Mix</h3>
+                    <button class="close-btn" onclick="togglePawgMixModule()">×</button>
+                </div>
+                <div class="module-content">
+                    <p class="module-note">Source priority: <strong>PMVHaven first</strong>, then safe direct-play fallback items if needed.</p>
+                    <div class="module-grid">
+                        <div class="module-field">
+                            <label for="pawgTargetSlot">Target Tile</label>
+                            <select id="pawgTargetSlot" class="module-input" style="margin-bottom: 0;">
+                                <option value="">New Tile</option>
+                            </select>
+                        </div>
+                        <div class="module-field">
+                            <label for="pawgMode">Fill Mode</label>
+                            <select id="pawgMode" class="module-input" style="margin-bottom: 0;" onchange="updatePawgModeFields()">
+                                <option value="count">Queue Size</option>
+                                <option value="duration">Target Duration (minutes)</option>
+                            </select>
+                        </div>
+                        <div class="module-field" id="pawgCountField">
+                            <label for="pawgQueueSize">Queue Size (videos)</label>
+                            <input id="pawgQueueSize" class="module-input" type="number" min="1" max="50" value="10" style="margin-bottom: 0;">
+                        </div>
+                        <div class="module-field" id="pawgDurationField" style="display:none;">
+                            <label for="pawgTargetMinutes">Target Duration (minutes)</label>
+                            <input id="pawgTargetMinutes" class="module-input" type="number" min="1" max="240" value="30" style="margin-bottom: 0;">
+                        </div>
+                        <div class="module-field full">
+                            <label class="module-switch">
+                                <input type="checkbox" id="pawgEndlessLoop" checked>
+                                <span>Endless loop generated mix in selected tile</span>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="module-actions">
+                        <button class="btn" id="pawgGenerateBtn" onclick="generatePawgMixAndStart()" style="background:#8e44ad; flex: 1;">Generate PAWG Mix</button>
+                    </div>
+                    <textarea id="pawgMixStatus" readonly placeholder="Generation status and source breakdown will appear here..."></textarea>
+                </div>
+            </div>
+        </div>
+
         <div class="drop-zone" id="dropZone">
             <h3>Drag & Drop Video Files, URLs, or Links Here</h3>
             <p class="instructions">
@@ -552,6 +643,56 @@
         const controls = document.querySelector('.controls');
         const controlsToggle = document.getElementById('controlsToggle');
         const slotSelect = document.getElementById('slotSelect');
+        const pawgTargetSlot = document.getElementById('pawgTargetSlot');
+
+        function toQueueEntry(item) {
+            if (!item) {
+                return null;
+            }
+
+            if (typeof item === 'string') {
+                return { src: item, title: null, durationSeconds: null };
+            }
+
+            if (typeof item.src !== 'string' || item.src.length === 0) {
+                return null;
+            }
+
+            return {
+                src: item.src,
+                title: typeof item.title === 'string' ? item.title : null,
+                durationSeconds: Number(item.durationSeconds) > 0
+                    ? Number(item.durationSeconds)
+                    : null
+            };
+        }
+
+        function setSlotPlaylist(videoId, queueItems, loop = false) {
+            const normalizedQueue = (queueItems || [])
+                .map(toQueueEntry)
+                .filter(Boolean);
+
+            if (normalizedQueue.length === 0) {
+                slotPlaylists.delete(videoId);
+                return;
+            }
+
+            slotPlaylists.set(videoId, {
+                queue: normalizedQueue.slice(),
+                baseQueue: loop ? normalizedQueue.slice() : [],
+                loop
+            });
+        }
+
+        function refillPlaylistQueueIfNeeded(playlist) {
+            if (!playlist) {
+                return;
+            }
+
+            if (playlist.queue.length === 0 && playlist.loop && playlist.baseQueue.length > 0) {
+                playlist.queue = playlist.baseQueue.map(item => ({ ...item }));
+            }
+        }
 
         function preventDefaults(e) {
             e.preventDefault();
@@ -689,6 +830,28 @@
             } else {
                 setSelectedSlot('');
             }
+
+            refreshPawgTargetOptions();
+        }
+
+        function refreshPawgTargetOptions() {
+            if (!pawgTargetSlot) {
+                return;
+            }
+
+            const previous = pawgTargetSlot.value;
+            pawgTargetSlot.innerHTML = '<option value="">New Tile</option>';
+
+            videos.forEach((video, index) => {
+                const option = document.createElement('option');
+                option.value = video.id;
+                option.textContent = `Tile ${index + 1}`;
+                pawgTargetSlot.appendChild(option);
+            });
+
+            if (previous && videos.some(video => video.id === previous)) {
+                pawgTargetSlot.value = previous;
+            }
         }
 
         function bindSlotSelection(videoItem) {
@@ -821,15 +984,16 @@
             return payload;
         }
 
-        async function addVideoWithResolution(src, name = null) {
+        async function addVideoWithResolution(src, name = null, options = {}) {
             if (!isPmvhavenVideoUrl(src)) {
-                addVideo(src, name);
+                addVideo(src, name, options);
                 return;
             }
 
             try {
                 const resolved = await resolvePmvhavenUrl(src);
                 addVideo(src, name, {
+                    ...options,
                     forceHtml5: true,
                     playbackSrc: resolved.streamUrl
                 });
@@ -937,7 +1101,7 @@
                     </div>`;
             }
 
-            return `<video autoplay controls muted crossorigin="anonymous" preload="metadata" playsinline webkit-playsinline="true" style="outline: none;">
+            return `<video autoplay controls muted preload="metadata" playsinline webkit-playsinline="true" style="outline: none;">
                 <source src="${playbackSrc}" type="${playbackType}">
                 <track kind="captions" srclang="en" label="English" default>
                 Your browser does not support the video tag.
@@ -1068,15 +1232,16 @@
             }
         }
 
-        async function loadSourceIntoSlot(videoId, src, name = null) {
+        async function loadSourceIntoSlot(videoId, src, name = null, options = {}) {
             if (!isPmvhavenVideoUrl(src)) {
-                updateVideoSlotContent(videoId, src, name);
+                updateVideoSlotContent(videoId, src, name, options);
                 return true;
             }
 
             try {
                 const resolved = await resolvePmvhavenUrl(src);
                 updateVideoSlotContent(videoId, src, name, {
+                    ...options,
                     forceHtml5: true,
                     playbackSrc: resolved.streamUrl
                 });
@@ -1103,19 +1268,35 @@
 
         async function advancePlaylist(videoId) {
             const playlist = slotPlaylists.get(videoId);
-            if (!playlist || playlist.queue.length === 0) {
+            if (!playlist) {
                 return;
             }
 
-            const next = playlist.queue.shift();
-            const loaded = await loadSourceIntoSlot(videoId, next.src);
-
-            if (!loaded) {
-                advancePlaylist(videoId);
-                return;
-            }
-
+            refillPlaylistQueueIfNeeded(playlist);
             if (playlist.queue.length === 0) {
+                slotPlaylists.delete(videoId);
+                return;
+            }
+
+            const maxAttempts = Math.max(playlist.queue.length, 1);
+            for (let attempt = 0; attempt < maxAttempts; attempt++) {
+                const next = playlist.queue.shift();
+                const loaded = await loadSourceIntoSlot(videoId, next.src, next.title, { forceHtml5: true });
+                if (loaded) {
+                    refillPlaylistQueueIfNeeded(playlist);
+                    if (!playlist.loop && playlist.queue.length === 0) {
+                        slotPlaylists.delete(videoId);
+                    }
+                    return;
+                }
+                refillPlaylistQueueIfNeeded(playlist);
+                if (playlist.queue.length === 0 && !playlist.loop) {
+                    slotPlaylists.delete(videoId);
+                    return;
+                }
+            }
+
+            if (!playlist.loop && playlist.queue.length === 0) {
                 slotPlaylists.delete(videoId);
             }
         }
@@ -1134,26 +1315,14 @@
             if (!targetSlotId) {
                 await addVideoWithResolution(urls[0]);
                 targetSlotId = videos[videos.length - 1].id;
-                if (urls.length > 1) {
-                    slotPlaylists.set(targetSlotId, {
-                        queue: urls.slice(1).map(src => ({ src }))
-                    });
-                } else {
-                    slotPlaylists.delete(targetSlotId);
-                }
+                setSlotPlaylist(targetSlotId, urls.slice(1).map(src => ({ src })), false);
             } else {
                 const loaded = await loadSourceIntoSlot(targetSlotId, urls[0]);
                 if (!loaded) {
                     showNotification('Failed to load first playlist item', 'warning');
                     return;
                 }
-                if (urls.length > 1) {
-                    slotPlaylists.set(targetSlotId, {
-                        queue: urls.slice(1).map(src => ({ src }))
-                    });
-                } else {
-                    slotPlaylists.delete(targetSlotId);
-                }
+                setSlotPlaylist(targetSlotId, urls.slice(1).map(src => ({ src })), false);
             }
 
             setSelectedSlot(targetSlotId);
@@ -1323,6 +1492,7 @@
 
         function clearAll() {
             videos = [];
+            slotPlaylists.clear();
             videoGrid.innerHTML = '';
             updateGridLayout();
             showDropZone();
@@ -1502,6 +1672,7 @@
         function closeAllModules() {
             document.getElementById('bulkImportModule').style.display = 'none';
             document.getElementById('playlistModule').style.display = 'none';
+            document.getElementById('pawgMixModule').style.display = 'none';
             document.getElementById('globalPlaylistModule').style.display = 'none';
             document.getElementById('modalOverlay').style.display = 'none';
         }
@@ -1552,6 +1723,128 @@
             if (!isVisible) {
                 module.style.display = 'block';
                 overlay.style.display = 'block';
+            }
+        }
+
+        function togglePawgMixModule() {
+            const module = document.getElementById('pawgMixModule');
+            const overlay = document.getElementById('modalOverlay');
+            const isVisible = module.style.display === 'block';
+
+            closeAllModules();
+            if (!isVisible) {
+                refreshPawgTargetOptions();
+                updatePawgModeFields();
+                module.style.display = 'block';
+                overlay.style.display = 'block';
+            }
+        }
+
+        function updatePawgModeFields() {
+            const mode = document.getElementById('pawgMode').value;
+            document.getElementById('pawgCountField').style.display = mode === 'count' ? 'block' : 'none';
+            document.getElementById('pawgDurationField').style.display = mode === 'duration' ? 'block' : 'none';
+        }
+
+        function writePawgStatus(text) {
+            document.getElementById('pawgMixStatus').value = text;
+        }
+
+        function pickMixPlayableSource(item) {
+            return item.playbackUrl || item.streamUrl || item.mediaUrl || item.pageUrl || null;
+        }
+
+        function capGeneratedMixByDuration(items, minutes) {
+            const targetSeconds = Math.max(Number(minutes) || 1, 1) * 60;
+            const selected = [];
+            let total = 0;
+            for (const item of items) {
+                selected.push(item);
+                total += Number(item.durationSeconds) > 0
+                    ? Number(item.durationSeconds)
+                    : 240;
+                if (total >= targetSeconds && selected.length > 0) {
+                    break;
+                }
+            }
+            return selected;
+        }
+
+        async function generatePawgMixAndStart() {
+            const mode = document.getElementById('pawgMode').value;
+            const queueSize = Math.min(Math.max(parseInt(document.getElementById('pawgQueueSize').value, 10) || 10, 1), 50);
+            const targetMinutes = Math.min(Math.max(parseInt(document.getElementById('pawgTargetMinutes').value, 10) || 30, 1), 240);
+            const endlessLoop = document.getElementById('pawgEndlessLoop').checked;
+            let targetSlotId = pawgTargetSlot.value;
+
+            const generateBtn = document.getElementById('pawgGenerateBtn');
+            generateBtn.disabled = true;
+            writePawgStatus('Generating PAWG PMV mix...\nPriority: PMVHaven -> fallback sources');
+
+            try {
+                const params = new URLSearchParams({
+                    mode,
+                    count: String(queueSize),
+                    targetMinutes: String(targetMinutes)
+                });
+                const response = await fetch(`${GRIDPLAY_API_BASE}/pawg-mix?${params.toString()}`);
+                const payload = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(payload.error || 'Mix generation failed.');
+                }
+
+                if (!Array.isArray(payload.items) || payload.items.length === 0) {
+                    throw new Error('No playable mix items returned.');
+                }
+
+                const cappedItems = mode === 'duration'
+                    ? capGeneratedMixByDuration(payload.items, targetMinutes)
+                    : payload.items.slice(0, queueSize);
+
+                const queueEntries = cappedItems
+                    .map(item => ({
+                        src: pickMixPlayableSource(item),
+                        title: item.title || null,
+                        durationSeconds: Number(item.durationSeconds) > 0 ? Number(item.durationSeconds) : null
+                    }))
+                    .filter(entry => typeof entry.src === 'string');
+
+                if (queueEntries.length === 0) {
+                    throw new Error('Generated items had no playable URLs.');
+                }
+
+                const firstEntry = queueEntries.shift();
+                if (!targetSlotId) {
+                    addVideo(firstEntry.src, firstEntry.title, { forceHtml5: true });
+                    targetSlotId = videos[videos.length - 1].id;
+                } else {
+                    const loaded = await loadSourceIntoSlot(targetSlotId, firstEntry.src, firstEntry.title, { forceHtml5: true });
+                    if (!loaded) {
+                        throw new Error('Could not load first generated mix item.');
+                    }
+                }
+
+                setSlotPlaylist(targetSlotId, queueEntries, endlessLoop);
+                setSelectedSlot(targetSlotId);
+                pawgTargetSlot.value = targetSlotId;
+
+                const detail = [
+                    `Generated ${queueEntries.length + 1} items (${mode === 'duration' ? `${targetMinutes} min target` : `${queueSize} count target`}).`,
+                    `PMVHaven items: ${payload.breakdown.pmvhaven}`,
+                    `Fallback items: ${payload.breakdown.fallback}`,
+                    `Estimated duration: ${payload.estimatedDurationMinutes} min`,
+                    `Endless loop: ${endlessLoop ? 'on' : 'off'}`
+                ].join('\n');
+
+                writePawgStatus(detail);
+                showNotification(`PAWG mix started in tile (${queueEntries.length + 1} items)`);
+                togglePawgMixModule();
+            } catch (error) {
+                writePawgStatus(`Error: ${error.message}`);
+                showNotification(error.message, 'warning');
+            } finally {
+                generateBtn.disabled = false;
             }
         }
 

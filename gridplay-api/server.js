@@ -536,6 +536,35 @@ async function handleStream(req, reqUrl, res) {
         }
 
         responseHeaders['X-GridPlay-Proxy'] = 'pmvhaven';
+
+        const contentType = upstream.headers.get('content-type') || '';
+        const isM3u8 = contentType.includes('mpegurl') || mediaUrl.includes('.m3u8');
+
+        if (isM3u8 && req.method !== 'HEAD' && upstream.body) {
+            const body = await upstream.text();
+            const lines = body.split('\n');
+            const rewrittenLines = lines.map(line => {
+                const trimmed = line.trim();
+                // A line in M3U8 that doesn't start with # and isn't empty is a URI
+                if (trimmed && !trimmed.startsWith('#')) {
+                    try {
+                        const absoluteUrl = new URL(trimmed, mediaUrl).toString();
+                        return `/gridplay-api/stream?url=${encodeURIComponent(absoluteUrl)}`;
+                    } catch (e) {
+                        return line;
+                    }
+                }
+                return line;
+            });
+            const rewrittenBody = rewrittenLines.join('\n');
+            const buf = Buffer.from(rewrittenBody, 'utf8');
+            
+            responseHeaders['content-length'] = buf.length.toString();
+            res.writeHead(upstream.status, responseHeaders);
+            res.end(buf);
+            return;
+        }
+
         res.writeHead(upstream.status, responseHeaders);
 
         if (req.method === 'HEAD' || !upstream.body) {

@@ -542,20 +542,35 @@ async function handleStream(req, reqUrl, res) {
 
         if (isM3u8 && req.method !== 'HEAD' && upstream.body) {
             const body = await upstream.text();
+            
+            // 1. Rewrite absolute/relative URIs on standalone lines
+            // 2. Rewrite URIs inside tags like URI="path/to/segment"
             const lines = body.split('\n');
             const rewrittenLines = lines.map(line => {
                 const trimmed = line.trim();
-                // A line in M3U8 that doesn't start with # and isn't empty is a URI
-                if (trimmed && !trimmed.startsWith('#')) {
-                    try {
-                        const absoluteUrl = new URL(trimmed, mediaUrl).toString();
-                        return `/gridplay-api/stream?url=${encodeURIComponent(absoluteUrl)}`;
-                    } catch (e) {
-                        return line;
-                    }
+                if (!trimmed) return line;
+
+                // Handle tags with URI attributes: e.g. #EXT-X-MAP:URI="init.mp4"
+                if (trimmed.startsWith('#')) {
+                    return line.replace(/URI="([^"]+)"/g, (match, p1) => {
+                        try {
+                            const abs = new URL(p1, mediaUrl).toString();
+                            return `URI="/gridplay-api/stream?url=${encodeURIComponent(abs)}"`;
+                        } catch (e) {
+                            return match;
+                        }
+                    });
                 }
-                return line;
+
+                // Handle standalone URI lines
+                try {
+                    const absoluteUrl = new URL(trimmed, mediaUrl).toString();
+                    return `/gridplay-api/stream?url=${encodeURIComponent(absoluteUrl)}`;
+                } catch (e) {
+                    return line;
+                }
             });
+
             const rewrittenBody = rewrittenLines.join('\n');
             const buf = Buffer.from(rewrittenBody, 'utf8');
             

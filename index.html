@@ -1584,8 +1584,8 @@
             // We use the standard robust pathway for every link
             for (const link of bulkExtractedLinks) {
                 await addVideoWithResolution(link);
-                // Slight delay to avoid hammering the resolve API too fast
-                await new Promise(r => setTimeout(r, 300));
+                // Respectful delay to give HLS engine time to initialize and avoid proxy congestion
+                await new Promise(r => setTimeout(r, 500));
             }
             
             toggleBulkModule();

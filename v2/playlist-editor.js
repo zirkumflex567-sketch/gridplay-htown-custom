@@ -85,7 +85,7 @@ class PlaylistEditorClass {
 
       // Simulate a small loading task so user knows "task started"
       setTimeout(() => {
-        const urls = val.split(/\\s+/).filter(Boolean);
+        const urls = val.split(/\s+/).filter(Boolean);
         this.addItems(urls.map(u => ({
           url: u,
           title: 'Custom Link',
@@ -210,18 +210,18 @@ class PlaylistEditorClass {
       el.draggable = true;
       el.dataset.index = i;
 
-      el.innerHTML = \`
+      el.innerHTML = `
         <div class="pe-item-drag-handle">☰</div>
         <div class="pe-item-content">
-          <div class="pe-item-title">\${item.title || item.url || 'Unknown Track'}</div>
+          <div class="pe-item-title">${item.title || item.url || 'Unknown Track'}</div>
           <div class="pe-item-meta">
-            \${item.source ? \`<span>Quelle: \${item.source}</span>\` : ''}
-            \${item.views ? \`<span>Aufrufe: \${item.views}</span>\` : ''}
-            \${item.rating ? \`<span>Bewertung: \${item.rating}%</span>\` : ''}
+            ${item.source ? `<span>Quelle: ${item.source}</span>` : ''}
+            ${item.views ? `<span>Aufrufe: ${item.views}</span>` : ''}
+            ${item.rating ? `<span>Bewertung: ${item.rating}%</span>` : ''}
           </div>
         </div>
-        <button class="pe-item-remove" data-index="\${i}">Remove</button>
-      \`;
+        <button class="pe-item-remove" data-index="${i}">Remove</button>
+      `;
       
       this.els.list.appendChild(el);
     });

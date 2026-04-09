@@ -352,6 +352,19 @@
             transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         }
 
+        .loader {
+            width: 24px;
+            height: 24px;
+            border: 3px solid rgba(0, 188, 212, 0.2);
+            border-radius: 50%;
+            border-top-color: #00bcd4;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
         @keyframes moduleFadeIn {
             from { opacity: 0; transform: translate(-50%, -45%); }
             to { opacity: 1; transform: translate(-50%, -50%); }
@@ -1036,10 +1049,23 @@
                 name: name || `Video ${videoCounter}`
             });
 
-            updateVideoSlotContent(videoId, src, name, options);
             bindSlotSelection(videoItem);
             updateGridLayout();
             hideDropZone();
+
+            // If it's a PMVHaven URL and no direct stream is provided, resolve it JIT
+            if (isPmvhavenVideoUrl(src) && !options.playbackSrc) {
+                // Show a mini loader in the tile
+                videoItem.innerHTML = `
+                    <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:100%; color:#00bcd4; font-size:13px; background:#1a1a1a;">
+                        <span class="loader" style="margin-bottom:10px;"></span>
+                        Resolving stream...
+                    </div>
+                `;
+                loadSourceIntoSlot(videoId, src, name);
+            } else {
+                updateVideoSlotContent(videoId, src, name, options);
+            }
         }
 
         async function loadSourceIntoSlot(videoId, src, name = null) {
@@ -1579,13 +1605,11 @@
         async function addAllBulkToGrid() {
             if (bulkExtractedLinks.length === 0) return;
             
-            showNotification(`Processing and adding ${bulkExtractedLinks.length} videos...`);
+            showNotification(`Adding ${bulkExtractedLinks.length} videos to grid...`);
             
-            // We use the standard robust pathway for every link
+            // Add them all instantly using JIT resolution
             for (const link of bulkExtractedLinks) {
-                await addVideoWithResolution(link);
-                // Respectful delay to give HLS engine time to initialize and avoid proxy congestion
-                await new Promise(r => setTimeout(r, 500));
+                addVideo(link);
             }
             
             toggleBulkModule();
@@ -1603,9 +1627,9 @@
             while (videos.length < globalPlaylistTargetCount) {
                 const link = globalPlaylistLinks[globalPlaylistIndex % globalPlaylistLinks.length];
                 globalPlaylistIndex++;
-                await addVideoWithResolution(link);
-                // Slight delay to avoid sudden layout jumps
-                await new Promise(r => setTimeout(r, 400));
+                addVideo(link);
+                // Slight delay to avoid layout jitter
+                await new Promise(r => setTimeout(r, 200));
             }
         }
 

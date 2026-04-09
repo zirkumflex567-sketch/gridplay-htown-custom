@@ -799,13 +799,360 @@
             return payload;
         }
 
-        function toAbsoluteStreamUrl(streamUrl) {
+        async function addVideoWithResolution(src, name = null) {
+            if (!isPmvhavenVideoUrl(src)) {
+                addVideo(src, name);
+                return;
+            }
+
             try {
-                return new URL(streamUrl, window.location.origin).toString();
-            } catch (_) {
-                return streamUrl;
+                const resolved = await resolvePmvhavenUrl(src);
+                addVideo(src, name, {
+                    forceHtml5: true,
+                    playbackSrc: resolved.streamUrl
+                });
+            } catch (error) {
+                addPmvhavenResolveError(src, name);
+                showNotification(error.message || 'PMVHaven video could not be loaded', 'warning');
             }
         }
+
+        function addPmvhavenResolveError(src, name = null) {
+            videoCounter++;
+            const videoId = `video-${videoCounter}`;
+
+            const videoItem = document.createElement('div');
+            videoItem.className = 'video-item';
+            videoItem.id = videoId;
+            videoItem.innerHTML = `
+                <div class="embed-error" style="padding:20px; text-align:center; color:#ff6b6b;">
+                    <p>PMVHaven video could not be resolved for in-grid playback.</p>
+                    <p style="font-size:12px; margin-top:10px;">
+                        <a href="${src}" target="_blank" rel="noopener noreferrer" style="color:#007acc;">Open PMVHaven page</a>
+                    </p>
+                </div>
+                <button class="video-remove" onclick="removeVideo('${videoId}')" title="Remove video">×</button>
+            `;
+
+            videos.push({
+                id: videoId,
+                src: src,
+                name: name || `Video ${videoCounter}`
+            });
+
+            videoGrid.appendChild(videoItem);
+            bindSlotSelection(videoItem);
+            updateGridLayout();
+            hideDropZone();
+        }
+
+        function buildVideoMarkup(src, videoId, options = {}) {
+            const playbackSrc = options.playbackSrc || src;
+            const forceHtml5 = options.forceHtml5 === true;
+            const playbackType = playbackSrc.toLowerCase().includes('.m3u8')
+                ? 'application/x-mpegURL'
+                : 'video/mp4';
+
+            if (!forceHtml5 && (src.includes('youtube.com') || src.includes('youtu.be'))) {
+                const embedUrl = convertYouTubeUrl(src);
+                return `
+                    <iframe src="${embedUrl}"
+                            frameborder="0"
+                            allowfullscreen
+                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                            style="width:100%;height:100%;"
+                            onerror="handleEmbedErrorAndContinue('${videoId}')">
+                    </iframe>
+                    <div class="embed-error" id="error-${videoId}" style="display:none; padding:20px; text-align:center; color:#ff6b6b;">
+                        <p>⚠ This YouTube video cannot be embedded</p>
+                        <p style="font-size:12px; margin-top:10px;">
+                            <a href="${src}" target="_blank" rel="noopener noreferrer" style="color:#007acc;">Open in new tab</a>
+                        </p>
+                    </div>`;
+            }
+
+            if (!forceHtml5 && src.includes('pornhub.com')) {
+                const embedUrl = convertPornhubUrl(src);
+                return `
+                    <iframe src="${embedUrl}"
+                            frameborder="0"
+                            allowfullscreen
+                            style="width:100%;height:100%;"
+                            onerror="handleEmbedErrorAndContinue('${videoId}')">
+                    </iframe>
+                    <div class="embed-error" id="error-${videoId}" style="display:none; padding:20px; text-align:center; color:#ff6b6b;">
+                        <p>⚠ This video cannot be embedded</p>
+                        <p style="font-size:12px; margin-top:10px;">
+                            <a href="${src}" target="_blank" rel="noopener noreferrer" style="color:#007acc;">Open in new tab</a>
+                        </p>
+                    </div>`;
+            }
+
+            if (!forceHtml5 && src.includes('vimeo.com')) {
+                const embedUrl = convertVimeoUrl(src);
+                return `
+                    <iframe src="${embedUrl}"
+                            frameborder="0"
+                            allowfullscreen
+                            allow="autoplay; fullscreen; picture-in-picture"
+                            style="width:100%;height:100%;">
+                    </iframe>`;
+            }
+
+            if (!forceHtml5 && (src.includes('adult') || src.includes('xxx') || src.toLowerCase().includes('porn'))) {
+                return `
+                    <iframe src="${src}"
+                            frameborder="0"
+                            allowfullscreen
+                            style="width:100%;height:100%;"
+                            onerror="handleEmbedErrorAndContinue('${videoId}')">
+                    </iframe>
+                    <div class="embed-error" id="error-${videoId}" style="display:none; padding:20px; text-align:center; color:#ff6b6b;">
+                        <p>⚠ This video cannot be embedded</p>
+                        <p style="font-size:12px; margin-top:10px;">
+                            <a href="${src}" target="_blank" rel="noopener noreferrer" style="color:#007acc;">Open in new tab</a>
+                        </p>
+                    </div>`;
+            }
+
+            return `<video autoplay controls muted crossorigin="anonymous" preload="metadata" playsinline webkit-playsinline="true" style="outline: none;">
+                <source src="${playbackSrc}" type="${playbackType}">
+                <track kind="captions" srclang="en" label="English" default>
+                Your browser does not support the video tag.
+            </video>`;
+        }
+
+        function wireMediaEvents(videoId) {
+            const videoItem = document.getElementById(videoId);
+            if (!videoItem) {
+                return;
+            }
+
+            const video = videoItem.querySelector('video');
+            if (video) {
+                const source = video.querySelector('source');
+                const isHls = source && (source.type === 'application/x-mpegURL' || source.src.includes('.m3u8'));
+                
+                if (isHls && typeof Hls !== 'undefined' && Hls.isSupported()) {
+                    const hls = new Hls();
+                    hls.loadSource(source.src);
+                    hls.attachMedia(video);
+                    video.hls = hls;
+                    
+                    hls.on(Hls.Events.MANIFEST_PARSED, function() {
+                        if (video.hasAttribute('autoplay')) {
+                            video.play().catch(e => console.warn("Autoplay prevented:", e));
+                        }
+                    });
+                    
+                    hls.on(Hls.Events.ERROR, function(event, data) {
+                        if (data.fatal) {
+                            switch (data.type) {
+                                case Hls.ErrorTypes.NETWORK_ERROR:
+                                    hls.startLoad();
+                                    break;
+                                case Hls.ErrorTypes.MEDIA_ERROR:
+                                    hls.recoverMediaError();
+                                    break;
+                                default:
+                                    hls.destroy();
+                                    advancePlaylist(videoId);
+                                    break;
+                            }
+                        }
+                    });
+                } else if (isHls && video.canPlayType('application/vnd.apple.mpegurl')) {
+                    video.src = source.src;
+                }
+
+                video.addEventListener('loadedmetadata', function() {
+                    if (video.textTracks && video.textTracks.length > 0) {
+                        for (let i = 0; i < video.textTracks.length; i++) {
+                            video.textTracks[i].mode = 'showing';
+                        }
+                    }
+                });
+
+                video.addEventListener('ended', function() {
+                    advancePlaylist(videoId);
+                });
+
+                video.addEventListener('error', function() {
+                    advancePlaylist(videoId);
+                });
+            }
+        }
+
+        function updateVideoSlotContent(videoId, src, name = null, options = {}) {
+            const videoItem = document.getElementById(videoId);
+            if (!videoItem) {
+                return;
+            }
+
+            const oldVideo = videoItem.querySelector('video');
+            if (oldVideo && oldVideo.hls) {
+                oldVideo.hls.destroy();
+            }
+
+            const videoElement = buildVideoMarkup(src, videoId, options);
+            videoItem.innerHTML = `
+                ${videoElement}
+                <button class="video-remove" onclick="removeVideo('${videoId}')" title="Remove video">×</button>
+            `;
+            bindSlotSelection(videoItem);
+
+            const index = videos.findIndex(v => v.id === videoId);
+            if (index !== -1) {
+                videos[index].src = src;
+                if (name) {
+                    videos[index].name = name;
+                }
+            }
+
+            wireMediaEvents(videoId);
+        }
+
+        function addVideo(src, name = null, options = {}) {
+            videoCounter++;
+            const videoId = `video-${videoCounter}`;
+
+            const videoItem = document.createElement('div');
+            videoItem.className = 'video-item';
+            videoItem.id = videoId;
+            videoGrid.appendChild(videoItem);
+
+            videos.push({
+                id: videoId,
+                src: src,
+                name: name || `Video ${videoCounter}`
+            });
+
+            updateVideoSlotContent(videoId, src, name, options);
+            bindSlotSelection(videoItem);
+            updateGridLayout();
+            hideDropZone();
+        }
+
+        async function loadSourceIntoSlot(videoId, src, name = null) {
+            if (!isPmvhavenVideoUrl(src)) {
+                updateVideoSlotContent(videoId, src, name);
+                return true;
+            }
+
+            try {
+                const resolved = await resolvePmvhavenUrl(src);
+                updateVideoSlotContent(videoId, src, name, {
+                    forceHtml5: true,
+                    playbackSrc: resolved.streamUrl
+                });
+                return true;
+            } catch (error) {
+                const videoItem = document.getElementById(videoId);
+                if (videoItem) {
+                    videoItem.innerHTML = `
+                        <div class="embed-error" style="padding:20px; text-align:center; color:#ff6b6b;">
+                            <p>PMVHaven video could not be resolved for in-grid playback.</p>
+                            <p style="font-size:12px; margin-top:10px;">
+                                <a href="${src}" target="_blank" rel="noopener noreferrer" style="color:#007acc;">Open PMVHaven page</a>
+                            </p>
+                        </div>
+                        <button class="video-remove" onclick="removeVideo('${videoId}')" title="Remove video">×</button>
+                    `;
+                    bindSlotSelection(videoItem);
+                }
+
+                showNotification(error.message || 'PMVHaven video could not be loaded', 'warning');
+                return false;
+            }
+        }
+
+        async function advancePlaylist(videoId) {
+            const playlist = slotPlaylists.get(videoId);
+            if (!playlist || playlist.queue.length === 0) {
+                return;
+            }
+
+            const next = playlist.queue.shift();
+            const loaded = await loadSourceIntoSlot(videoId, next.src);
+
+            if (!loaded) {
+                advancePlaylist(videoId);
+                return;
+            }
+
+            if (playlist.queue.length === 0) {
+                slotPlaylists.delete(videoId);
+            }
+        }
+
+        async function addPlaylistFromInput() {
+            const raw = urlInput.value.trim();
+            const urls = parseLinkList(raw);
+
+            if (urls.length === 0) {
+                showNotification('No valid URLs found for playlist', 'warning');
+                return;
+            }
+
+            let targetSlotId = slotSelect.value;
+
+            if (!targetSlotId) {
+                await addVideoWithResolution(urls[0]);
+                targetSlotId = videos[videos.length - 1].id;
+                if (urls.length > 1) {
+                    slotPlaylists.set(targetSlotId, {
+                        queue: urls.slice(1).map(src => ({ src }))
+                    });
+                } else {
+                    slotPlaylists.delete(targetSlotId);
+                }
+            } else {
+                const loaded = await loadSourceIntoSlot(targetSlotId, urls[0]);
+                if (!loaded) {
+                    showNotification('Failed to load first playlist item', 'warning');
+                    return;
+                }
+                if (urls.length > 1) {
+                    slotPlaylists.set(targetSlotId, {
+                        queue: urls.slice(1).map(src => ({ src }))
+                    });
+                } else {
+                    slotPlaylists.delete(targetSlotId);
+                }
+            }
+
+            setSelectedSlot(targetSlotId);
+            urlInput.value = '';
+            showNotification(`Playlist queued in selected tile (${urls.length} links)`);
+        }
+
+        function handleEmbedError(videoId) {
+            const iframe = document.querySelector(`#${videoId} iframe`);
+            const errorDiv = document.getElementById(`error-${videoId}`);
+            if (iframe && errorDiv) {
+                iframe.style.display = 'none';
+                errorDiv.style.display = 'block';
+            }
+        }
+
+        function handleEmbedErrorAndContinue(videoId) {
+            handleEmbedError(videoId);
+            advancePlaylist(videoId);
+        }
+
+        function removeVideo(videoId) {
+            const videoElement = document.getElementById(videoId);
+            if (videoElement) {
+                const oldVideo = videoElement.querySelector('video');
+                if (oldVideo && oldVideo.hls) {
+                    oldVideo.hls.destroy();
+                }
+                videoElement.remove();
+                videos = videos.filter(v => v.id !== videoId);
+                slotPlaylists.delete(videoId);
+                if (selectedSlotId === videoId) {
+                    selectedSlotId = '';
+                }
                 updateGridLayout();
                 refreshSlotOptions();
                 
@@ -1002,7 +1349,7 @@
             const urlInput = document.getElementById('playlistUrlInput');
             const resultsArea = document.getElementById('playlistResults');
             const url = urlInput.value.trim();
-
+            
             if (!url || !isValidUrl(url)) {
                 showNotification('Please enter a valid playlist URL', 'warning');
                 return;
@@ -1019,38 +1366,15 @@
 
                 if (!response.ok) throw new Error(data.error || 'Failed to extract playlist');
 
-                const items = Array.isArray(data.items) ? data.items : [];
-                if (items.length > 0) {
-                    extractedPlaylistItems = items;
-                    extractedLinks = items
-                        .map(item => item && item.pageUrl)
-                        .filter(link => typeof link === 'string' && isValidUrl(link));
-                    resolvedLinks = items
-                        .map(item => item && item.streamUrl)
-                        .filter(link => typeof link === 'string' && link.includes('/stream?url='))
-                        .map(toAbsoluteStreamUrl);
-
-                    const unresolvedCount = Math.max(0, extractedLinks.length - resolvedLinks.length);
-                    resultsArea.value = (resolvedLinks.length > 0 ? resolvedLinks : extractedLinks).join('\n');
-                    showNotification(`Found ${items.length} items (${resolvedLinks.length} direct links ready)`);
-
-                    document.getElementById('resolveAllBtn').disabled = unresolvedCount === 0;
-                    document.getElementById('copyLinksBtn').disabled = false;
-                    document.getElementById('addAllBtn').disabled = false;
-                } else if (data.links && data.links.length > 0) {
-                    extractedPlaylistItems = data.links.map(link => ({ pageUrl: link, streamUrl: null }));
+                if (data.links && data.links.length > 0) {
                     extractedLinks = data.links;
-                    resolvedLinks = [];
                     resultsArea.value = data.links.join('\n');
                     showNotification(`Found ${data.links.length} video links!`);
-
+                    
                     document.getElementById('resolveAllBtn').disabled = false;
                     document.getElementById('copyLinksBtn').disabled = false;
                     document.getElementById('addAllBtn').disabled = false;
                 } else {
-                    extractedPlaylistItems = [];
-                    extractedLinks = [];
-                    resolvedLinks = [];
                     resultsArea.value = 'No video links found in this playlist.';
                 }
             } catch (error) {
@@ -1059,7 +1383,6 @@
             }
         }
 
-        let extractedPlaylistItems = [];
         let extractedLinks = [];
         let resolvedLinks = [];
 
@@ -1069,44 +1392,33 @@
             const resultsArea = document.getElementById('playlistResults');
             const progress = document.getElementById('extractionProgress');
             const fill = document.getElementById('progressFill');
-
-            const linksNeedingResolve = extractedPlaylistItems
-                .filter(item => !item || !item.streamUrl)
-                .map(item => item && item.pageUrl)
-                .filter(link => typeof link === 'string');
-
-            if (linksNeedingResolve.length === 0) {
-                resultsArea.value = resolvedLinks.join('\n');
-                document.getElementById('resolveAllBtn').disabled = true;
-                showNotification(`All direct links are already ready (${resolvedLinks.length}).`);
-                return;
-            }
-
+            
             progress.style.display = 'block';
+            resolvedLinks = [];
             resultsArea.value = 'Resolving direct links (this may take a while)...\n\n';
+            
             document.getElementById('resolveAllBtn').disabled = true;
-
-            const resolvedSet = new Set(resolvedLinks);
-            for (let i = 0; i < linksNeedingResolve.length; i++) {
-                const link = linksNeedingResolve[i];
-                const percentage = ((i + 1) / linksNeedingResolve.length) * 100;
+            
+            for (let i = 0; i < extractedLinks.length; i++) {
+                const link = extractedLinks[i];
+                const percentage = ((i + 1) / extractedLinks.length) * 100;
                 fill.style.width = `${percentage}%`;
 
                 try {
                     const resolved = await resolvePmvhavenUrl(link);
                     if (resolved && resolved.streamUrl) {
-                        const directLink = toAbsoluteStreamUrl(resolved.streamUrl);
-                        resolvedSet.add(directLink);
+                        const directLink = window.location.origin + resolved.streamUrl;
+                        resolvedLinks.push(directLink);
                         resultsArea.value += `${directLink}\n`;
                     }
                 } catch (error) {
                     resultsArea.value += `Failed: ${link}\n`;
                 }
-
+                
+                // Small delay to be respectful
                 await new Promise(r => setTimeout(r, 500));
             }
-
-            resolvedLinks = Array.from(resolvedSet);
+            
             showNotification(`Resolution complete! ${resolvedLinks.length} direct links found.`);
             setTimeout(() => { progress.style.display = 'none'; fill.style.width = '0%'; }, 1000);
         }
@@ -1124,7 +1436,6 @@
             document.getElementById('resolveAllBtn').disabled = true;
             document.getElementById('copyLinksBtn').disabled = true;
             document.getElementById('addAllBtn').disabled = true;
-            extractedPlaylistItems = [];
             extractedLinks = [];
             resolvedLinks = [];
         }

@@ -60,7 +60,14 @@
     }
 
     async function runSearch() {
-      const body = {
+      const searchBtn = document.querySelector('button[onclick="runSearch()"]');
+      const oldText = searchBtn.textContent;
+      searchBtn.textContent = 'Searching... Please wait';
+      searchBtn.disabled = true;
+      document.getElementById('status').textContent = 'Scraping sites...';
+
+      try {
+        const body = {
         query: document.getElementById('query').value.trim(),
         sites: selectedSites(),
         minViews: Number(document.getElementById('minViews').value || 50000),
@@ -98,6 +105,10 @@
       document.getElementById('results').innerHTML = render.join('');
       document.getElementById('status').textContent = `Results: ${out.length}`;
       if (window.PlaylistEditor) { window.PlaylistEditor.setQueue(queue, index); }
+      } finally {
+        searchBtn.textContent = oldText;
+        searchBtn.disabled = false;
+      }
     }
 
     function startLoop() {

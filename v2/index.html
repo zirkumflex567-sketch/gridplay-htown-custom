@@ -656,6 +656,10 @@
                             <input id="searchV2MinRating" class="module-input" type="number" min="0" max="100" value="80" style="margin-bottom: 0;">
                         </div>
                         <div class="module-field">
+                            <label for="searchV2MinDuration">Min Duration (sec)</label>
+                            <input id="searchV2MinDuration" class="module-input" type="number" min="0" value="60" style="margin-bottom: 0;" title="Filter out short trailers (e.g. 60s+)">
+                        </div>
+                        <div class="module-field">
                             <label for="searchV2Pages">Pages</label>
                             <input id="searchV2Pages" class="module-input" type="number" min="1" max="10" value="2" style="margin-bottom: 0;">
                         </div>
@@ -704,8 +708,8 @@
         let videoCounter = 0;
         let selectedSlotId = '';
         const slotPlaylists = new Map();
-        const GRIDPLAY_API_BASE = '/gridplay-api';
         const GRIDPLAY_API_V2_BASE = '/gridplay-api-v2';
+        const GRIDPLAY_API_BASE = GRIDPLAY_API_V2_BASE; // Mirror V2 for fixed logic
 
         // Drag and drop functionality
         const dropZone = document.getElementById('dropZone');
@@ -2068,6 +2072,7 @@
             const query = queryInput.value.trim();
             const minViews = Math.max(parseInt(minViewsInput.value, 10) || 0, 0);
             const minRating = Math.min(Math.max(parseInt(minRatingInput.value, 10) || 0, 0), 100);
+            const minDuration = Math.max(parseInt(document.getElementById('searchV2MinDuration').value, 10) || 60, 0);
             const pages = Math.min(Math.max(parseInt(pagesInput.value, 10) || 2, 1), 10);
             const sites = getSearchV2SelectedSites();
 
@@ -2091,7 +2096,7 @@
                 const response = await fetch(`${GRIDPLAY_API_V2_BASE}/search`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ query, minViews, minRating, pages, sites })
+                    body: JSON.stringify({ query, minViews, minRating, minDuration, pages, sites })
                 });
                 const payload = await readApiJsonOrThrow(response, 'Search failed');
                 const rawItems = Array.isArray(payload.results)

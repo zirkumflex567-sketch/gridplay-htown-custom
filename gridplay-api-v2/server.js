@@ -5,7 +5,10 @@ const http = require('http');
 const { URL } = require('url');
 const { Readable } = require('stream');
 const { all: allScrapers, byId: scrapersById } = require('./scrapers');
-const { scoreVideo, htmlDecode } = require('./scrapers/shared');
+const { scoreVideo, htmlDecode, MIN_VIDEO_DURATION } = require('./scrapers/shared');
+const { resolveUrl } = require('./src/resolver');
+const { classifyUrlWithRegistry, getProviderByDomain } = require('./src/providers');
+const { logger } = require('./src/observability/logger');
 
 const HOST = process.env.HOST || '127.0.0.1';
 const PORT = Number(process.env.PORT || 3352);
@@ -94,38 +97,51 @@ async function handleSearch(req, res) {
     return;
   }
 
-  const minViews = Math.max(0, Number(body.minViews || 50000));
-  const minRating = Math.max(0, Math.min(100, Number(body.minRating || 80)));
-  const pages = Math.max(1, Math.min(6, Number(body.pages || 2)));
-  const limit = Math.max(1, Math.min(600, Number(body.limit || 250)));
+  const minViews = Math.max(0, body.minViews !== undefined ? Number(body.minViews) : 50000);
+  const minRating = Math.max(0, Math.min(100, body.minRating !== undefined ? Number(body.minRating) : 80));
+  const minDuration = Math.max(0, body.minDuration !== undefined ? Number(body.minDuration) : MIN_VIDEO_DURATION); // Use global constant
+  const pages = Math.max(1, Math.min(6, body.pages !== undefined ? Number(body.pages) : 2));
+  const limit = Math.max(1, Math.min(600, body.limit !== undefined ? Number(body.limit) : 250));
   const selectedSites = Array.isArray(body.sites)
     ? body.sites.filter((s) => scrapersById.has(s))
     : allScrapers.map((s) => s.id);
 
-  const candidates = [];
   const errors = [];
 
+  const resultsPerSite = new Map();
   for (const siteId of selectedSites) {
     const scraper = scrapersById.get(siteId);
+    const siteCandidates = [];
     for (let page = 1; page <= pages; page += 1) {
       try {
         const searchUrl = scraper.buildSearchUrl(query, page);
         const html = await fetchHtml(searchUrl);
-        candidates.push(...scraper.parseSearchResults(html).map((entry) => ({ ...entry, searchUrl })));
+        siteCandidates.push(...scraper.parseSearchResults(html).map((entry) => ({ ...entry, searchUrl })));
       } catch (error) {
         errors.push({ site: siteId, page, error: error.message });
       }
+    }
+    resultsPerSite.set(siteId, siteCandidates);
+  }
+
+  // Interleaving Results (Provider Balancing)
+  const candidates = [];
+  const maxPerSite = Math.max(...Array.from(resultsPerSite.values()).map(r => r.length));
+  for (let i = 0; i < maxPerSite; i++) {
+    for (const siteId of selectedSites) {
+      const list = resultsPerSite.get(siteId);
+      if (list && list[i]) candidates.push(list[i]);
     }
   }
 
   const dedup = new Map();
   for (const candidate of candidates) {
     const current = dedup.get(candidate.pageUrl);
-    if (!current || scoreVideo(candidate, 0, 0) > scoreVideo(current, 0, 0)) dedup.set(candidate.pageUrl, candidate);
+    if (!current || scoreVideo(candidate, 0, 0, 0) > scoreVideo(current, 0, 0, 0)) dedup.set(candidate.pageUrl, candidate);
   }
 
   const results = [...dedup.values()]
-    .map((entry) => ({ ...entry, score: scoreVideo(entry, minViews, minRating) }))
+    .map((entry) => ({ ...entry, score: scoreVideo(entry, minViews, minRating, minDuration) }))
     .filter((entry) => entry.score >= 0)
     .sort((a, b) => b.score - a.score)
     .slice(0, limit);
@@ -133,7 +149,120 @@ async function handleSearch(req, res) {
   sendJson(res, 200, { query, selectedSites, filters: { minViews, minRating, pages, limit }, availableSites: allScrapers.map((s) => s.id), count: results.length, results, errors });
 }
 
-async function handleResolve(reqUrl, res) {
+async function handleResolve(req, reqUrl, res) {
+  let raw = reqUrl.searchParams.get('url');
+  
+  if (!raw && req.method === 'POST') {
+    try {
+      const body = await readJsonBody(req);
+      raw = body.url;
+    } catch (_) {
+      sendJson(res, 400, { error: 'Invalid JSON body for POST resolve.' });
+      return;
+    }
+  }
+
+  if (!raw) {
+    sendJson(res, 400, { error: 'url parameter is required (query or POST body).' });
+    return;
+  }
+
+  let pageUrl;
+  try {
+    pageUrl = validatedHttps(raw);
+  } catch (error) {
+    sendJson(res, 400, { error: error.message });
+    return;
+  }
+
+  const startTime = Date.now();
+  try {
+    const result = await resolveUrl(pageUrl.toString());
+    const durationMs = Date.now() - startTime;
+    logger.logResolve(pageUrl.toString(), result, durationMs);
+    
+    if (result.mediaUrl) {
+      sendJson(res, 200, {
+        sourceUrl: pageUrl.toString(),
+        mediaUrl: result.mediaUrl,
+        mediaType: result.mediaType,
+        streamUrl: result.streamUrl,
+        // Compatibility names for V2 UI
+        url: result.streamUrl || result.mediaUrl,
+        playbackUrl: result.streamUrl || result.mediaUrl,
+        title: result.title,
+        duration: result.durationSeconds,
+        source: result.source,
+        classification: result.classification,
+        resolverPath: result.resolverPath
+      });
+    } else {
+      sendJson(res, 502, { error: result.error || 'No playable media found', classification: result.classification });
+    }
+  } catch (error) {
+    logger.logResolveError(pageUrl.toString(), error, 'resolve');
+    sendJson(res, 502, { error: `Resolve failed: ${error.message}` });
+  }
+}
+
+async function handlePlaylist(reqUrl, res) {
+  const url = reqUrl.searchParams.get('url');
+  if (!url) return sendJson(res, 400, { error: 'url parameter is required.' });
+
+  try {
+    const parsed = validatedHttps(url);
+    const html = await fetchHtml(parsed.toString());
+    const links = collectPlaylistLinksFromHtml(html);
+    sendJson(res, 200, { url: parsed.toString(), count: links.length, links });
+  } catch (error) {
+    sendJson(res, 502, { error: `Playlist extraction failed: ${error.message}` });
+  }
+}
+
+function collectPlaylistLinksFromHtml(html) {
+  const normalized = htmlDecode(html || '');
+  const matches = normalized.match(/(?:https:\/\/(?:www\.)?pmvhaven\.com)?\/videos?\/[a-zA-Z0-9_-]+/gi) || [];
+  const seen = new Set();
+  const results = [];
+  for (const raw of matches) {
+    const link = raw.startsWith('http') ? raw : `https://pmvhaven.com${raw}`;
+    const clean = link.split('?')[0].split('#')[0].toLowerCase();
+    if (!seen.has(clean)) {
+      seen.add(clean);
+      results.push(link);
+    }
+  }
+  return results;
+}
+
+async function handlePawgMix(reqUrl, res) {
+  const mode = reqUrl.searchParams.get('mode') || 'count';
+  const count = Math.min(Math.max(Number(reqUrl.searchParams.get('count')) || 8, 1), 50);
+  
+  try {
+    const searchUrl = `https://pmvhaven.com/search?q=pawg&page=1`;
+    const html = await fetchHtml(searchUrl);
+    const scraper = scrapersById.get('pmvhaven');
+    const results = scraper.parseSearchResults(html).slice(0, count);
+
+    const items = results.map(item => ({
+      ...item,
+      playbackUrl: `/gridplay-api-v2/stream?url=${encodeURIComponent(item.pageUrl)}`,
+      streamUrl: `/gridplay-api-v2/stream?url=${encodeURIComponent(item.pageUrl)}`
+    }));
+
+    sendJson(res, 200, {
+      mode,
+      count: items.length,
+      breakdown: { pmvhaven: items.length, fallback: 0 },
+      items
+    });
+  } catch (error) {
+    sendJson(res, 502, { error: `PAWG mix failed: ${error.message}` });
+  }
+}
+
+async function handleClassify(reqUrl, res) {
   const raw = reqUrl.searchParams.get('url');
   if (!raw) {
     sendJson(res, 400, { error: 'url query parameter is required.' });
@@ -149,12 +278,28 @@ async function handleResolve(reqUrl, res) {
   }
 
   try {
-    const html = await fetchHtml(pageUrl.toString(), { Referer: `${pageUrl.protocol}//${pageUrl.hostname}/` });
-    const mediaUrl = pickBestMediaUrl(extractMediaCandidates(html));
-    sendJson(res, 200, { sourceUrl: pageUrl.toString(), mediaUrl, streamUrl: `/gridplay-api-v2/stream?url=${encodeURIComponent(mediaUrl)}` });
+    const classification = classifyUrlWithRegistry(pageUrl.toString());
+    logger.logClassifier(pageUrl.toString(), classification);
+    sendJson(res, 200, classification);
   } catch (error) {
-    sendJson(res, 502, { error: `Resolve failed: ${error.message}` });
+    sendJson(res, 500, { error: `Classification failed: ${error.message}` });
   }
+}
+
+function handleProviders(res) {
+  const providers = getProviderByDomain ? [] : [];
+  const { getAllProviders } = require('./src/providers');
+  const all = getAllProviders();
+  const providerList = all
+    .filter(p => p.id !== 'generic')
+    .map(p => ({
+      id: p.id,
+      domains: p.domains,
+      supportsVideo: typeof p.resolveVideo === 'function',
+      supportsPlaylist: typeof p.resolvePlaylist === 'function',
+      supportsSearch: typeof p.search === 'function'
+    }));
+  sendJson(res, 200, { providers: providerList, count: providerList.length });
 }
 
 async function handleStream(req, reqUrl, res) {
@@ -194,7 +339,11 @@ const server = http.createServer(async (req, res) => {
   if (!['GET', 'POST', 'HEAD'].includes(req.method)) return sendJson(res, 405, { error: 'Method not allowed.' });
   if (reqUrl.pathname === '/health') return sendJson(res, 200, { ok: true, service: 'gridplay-api-v2' });
   if (reqUrl.pathname === '/search' && req.method === 'POST') return handleSearch(req, res);
-  if (reqUrl.pathname === '/resolve' && req.method === 'GET') return handleResolve(reqUrl, res);
+  if (reqUrl.pathname === '/resolve') return handleResolve(req, reqUrl, res);
+  if (reqUrl.pathname === '/playlist' && req.method === 'GET') return handlePlaylist(reqUrl, res);
+  if (reqUrl.pathname === '/pawg-mix' && req.method === 'GET') return handlePawgMix(reqUrl, res);
+  if (reqUrl.pathname === '/classify' && req.method === 'GET') return handleClassify(reqUrl, res);
+  if (reqUrl.pathname === '/providers' && req.method === 'GET') return handleProviders(res);
   if (reqUrl.pathname === '/stream') return handleStream(req, reqUrl, res);
   return sendJson(res, 404, { error: 'Not found.' });
 });

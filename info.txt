@@ -1,0 +1,99 @@
+Analyse des bestehenden GridPlay-Projekts und Plan für den Ausbau
+Ausgangslage
+
+Das vorliegende Repository gridplay-htown-custom enthält eine vollständig in HTML/CSS/JavaScript implementierte Web‑App, die mehrere Video‑Quellen simultan abspielen kann. Der Quellcode liegt hauptsächlich in der Datei index.html bzw. v2/index.html und enthält folgende Kernfunktionen (laut README):
+
+Multi‑Source‑Unterstützung: YouTube‑Links, Vimeo, lokale Dateien (MP4, WebM, AVI, MOV) und direkte Video‑URLs können per Drag‑and‑Drop oder Eingabefeld hinzugefügt werden.
+Intuitive Oberfläche: die Videos werden automatisch im Grid angeordnet (1×1 bis 3×3), es gibt schwebende Steuerelemente pro Video und ein dunkles Theme. GridPlay hat keine externen Abhängigkeiten – die gesamte Logik liegt in einem HTML‑Dokument.
+Playlist‑Funktionen (v2): ein Playlist‑Editor mit Glas‑UI, Suche über mehrere Seiten (PMVHaven, XVideos usw.) und eine Kachel‑Playlist‑Queue, in der mehrere Links sequentiell abgearbeitet werden können.
+API‑Modul (v2): Das Projekt enthält ein gridplay-api-v2, das mittels JIT‑Auflösung Links von verschiedenen Porno‑Sites scrapt und zur Videowiedergabe nutzt. Es arbeitet unter NGINX/Node.js auf dem Server (VPS) und wird per systemd‑Timer automatisch synchronisiert.
+
+Trotz dieser Features gibt es aus Nutzersicht mehrere Einschränkungen: einzelne Videos laden manchmal nicht oder brechen nach wenigen Sekunden ab; die Audio‑Steuerung pro Video ist unflexibel; einige Buttons haben redundante Funktionalität. Zudem fehlt ein Benutzer‑/Mitgliedersystem, Favoriten, Merkliste, Bewertungen und soziale Interaktion – das Projekt soll sich zu einem eigenen Video‑/Playlist‑Netzwerk entwickeln.
+
+Wettbewerbs‑ und Inspirationsquellen
+
+Bei der Recherche wurden folgende ähnliche Projekte gefunden:
+
+GridPlayer – ein Open‑Source‑Tool, das mehrere Videos gleichzeitig abspielen kann. Es richtet sich an Video‑Reviewer und bietet Basisfunktionen wie das Nebeneinanderstellen von Videos, aber keine fortgeschrittenen Steuerungen oder Playlists.
+StreamGrid – Desktop‑App (Windows/macOS/Linux) zum gleichzeitigen Anzeigen mehrerer Streams. Unterstützt YouTube, Twitch, HLS/MPEG‑DASH und lokale Dateien; Benutzer können Layouts speichern, Streams verschieben oder die Größe anpassen. Social‑Features fehlen.
+PeerTube – dezentrales Open‑Source‑Video‑Netzwerk, bei dem Videos auf vielen Servern gehostet und via WebTorrent verteilt werden. Benutzer können Accounts anlegen, Videos favorisieren, abonnieren und Playlists anlegen. Für die Suche wird ein spezialisierter Index verwendet, um tausende Instanzen zu durchsuchen. Dieses Projekt zeigt, dass eine föderierte Architektur und ein soziales Netzwerk um Videos herum möglich ist.
+Open Source Social Network (OSSN) – ein PHP‑basiertes, selbst gehostetes soziales Netzwerk mit Funktionen wie Newsfeed, Gruppen, private Nachrichten, Foto‑Alben und Admin‑Panel. Es dient als Beispiel für ein vollständiges Mitglieder‑/Kommunikationssystem, das man auf dem eigenen Server betreiben kann.
+
+Die Open‑Source‑Projekte zeigen, dass es Tools für Mehrfachvideo‑Ansichten gibt und Systeme zur sozialen Vernetzung existieren. Allerdings gibt es keine Plattform, die beides kombiniert: ein Multi‑Video‑Grid mit Playlist‑Management und gleichzeitigem sozialen Netzwerk. Deshalb lohnt sich ein Ausbau von GridPlay.
+
+Ausbaustrategie
+
+Der Ausbau wird in kleine, klar definierte Schritte unterteilt. Die Reihenfolge orientiert sich an den Prioritäten des Nutzers: UI‑/UX‑Umbau und Video‑Loading verbessern stehen an erster Stelle, anschließend folgen Playlist‑/Favoriten‑Funktionen, Mitglieder‑/Bewertungs‑System und Monetarisierung. Für den Programmierprozess wird empfohlen, branch‑basiert zu arbeiten und regelmäßig zu testen.
+
+1. Aufteilung des Projekts in Module
+
+Best Practice: Die aktuelle Umsetzung als monolithische HTML‑Datei erschwert die Weiterentwicklung. Der Code sollte in einzelne Module bzw. Dateien aufgespalten werden (z. B. via ES‑Modules). Empfohlener Stack:
+
+Frontend: Verwenden Sie ein modernes Framework wie Svelte oder React, das Komponenten unterstützt und dennoch kleine Bundle‑Größen liefert. Svelte eignet sich gut, weil es ohne viel Overhead kompiliert wird. Alternativ kann Vanilla JS beibehalten werden, aber die Dateien sollten modularisiert werden.
+Backend: Der vorhandene gridplay-api-v2‑Server ist in Node.js geschrieben; darauf kann man aufbauen. Ergänzen Sie eine REST‑ bzw. GraphQL‑API für Benutzerdaten, Playlists und Bewertungen. Verwenden Sie Express.js oder Fastify mit TypeScript für Typensicherheit.
+Datenbank: Für Benutzerkonten, Favoriten, Playlists und Logs sollte eine relationale Datenbank eingesetzt werden (z. B. PostgreSQL). Bei Bedarf kann SQLite für einfache Nutzung reichen; PostgreSQL skaliert aber besser.
+Authentication: Nutzen Sie ein bewährtes Auth‑System wie Passport.js (lokale Strategie) oder Keycloak für externe OAuth‑Anbindung. Für das Frontend könnte JWT eingesetzt werden.
+Deployment: Beibehalten des automatischen Deployment‑Scripts auf dem htown‑Server. Node‑/Nginx‑Setup anpassen, um neue Routen und Dienste zu bedienen.
+2. UI‑/UX‑Umbau
+
+Ziel ist ein moderner, konsistenter Look mit minimierten Redundanzen und einem bewegbaren Menübutton je Grid.
+
+Zentraler Menü‑Button pro Video‑Tile
+Platzieren Sie einen runden, per Drag‑and‑Drop verschiebbaren Menübutton in der Mitte jedes Video‑Tiles. Durch „Shift + Linksklick“ kann der Button verschoben werden; normaler Linksklick öffnet das Menü; Rechtsklick wechselt den Ton zwischen Videos.
+Beim Öffnen des Menüs erscheinen radial angeordnete Unterbuttons (Qualitätsumschalter, Neu laden, „Nächstes Video aus Playlist“, Favorit/Markieren). Verwenden Sie CSS‑Transforms für die radialen Animationen.
+Für die Tooltips implementieren Sie title‑Attribute oder ein kleines Tooltip‑Overlay mit Klartext („Shift+Linksklick = verschieben“, „Linksklick = öffnen“, „Rechtsklick = Sound wechseln“).
+Audio‑Steuerung
+Beim ersten Laden sollen nur Videos in einem einzigen Tile Ton besitzen (der „aktive“ Kanal). Dies wird im JavaScript durch das Muten aller Video‑Elemente außer dem aktuell gewählten realisiert.
+Über den Rechtsklick auf den Menübutton wird die Audio‑Steuerung ausgeführt: Das aktuell aktive Video wird stumm geschaltet, das nächste nicht gemutete Video erhält den Ton. Dazu pflegen Sie eine Liste aller aktuellen Video‑Tiles und deren Mute‑Status.
+Ergänzen Sie einen globalen „Mute‑Modus“ im UI (Schalter im Header), um alle Videos stumm zu schalten.
+Qualitätsumschalter
+Da unterschiedliche Videoquellen verschiedene Qualitäten anbieten, implementieren Sie pro Player drei Qualitätsstufen: „Low“, „Medium“, „High“. Für HTML5‑Videos kann man verschiedene src‑Varianten (MP4 360p, 720p, 1080p) bereitstellen; bei HLS‑Streams können Sie hls.js verwenden und mittels hls.currentLevel die Auflösung setzen. Bei YouTube/Vimeo‑Embeds muss die API genutzt werden (player.setPlaybackQuality()).
+Visualisieren Sie die Stufe über die Helligkeit des Buttons (kein Leuchten für „Low“, normal für „Medium“, starkes Leuchten für „High“).
+Neu laden / Nächstes Video
+Implementieren Sie einen „reload“-Button im radialen Menü: Er ruft die Konvertierungs‑/Fetch‑Funktion erneut auf (z. B. URL erneut an gridplay-api-v2 senden). Bei Fehler wird die Wiedergabe neu gestartet.
+Ein weiterer Button „Nächstes Video“ ersetzt das aktuelle Video durch das nächste Item der Playlist dieses Tiles. Das vorhandene rote „X“ bleibt als Fallback zum Entfernen des Tiles.
+Favorit & Merken
+Fügen Sie zwei Buttons hinzu: „Favorit“ (Herzsymbol) und „Merken“. Beide speichern das Video (Link + Metadaten) in der Datenbank für den angemeldeten Benutzer. Der Unterschied: Favorit markiert einen Clip dauerhaft; Merkliste ist eher temporär. In der Benutzeroberfläche sollte es separate Seiten geben: „Meine Favoriten“ und „Merkliste“.
+Layout‑Bereinigung
+Entfernen Sie redundante Buttons: „Add Video“ und „Add Playlist“ werden zu einem „Add“‑Button zusammengeführt. Der Code erkennt anhand des Links, ob es sich um eine Playliste oder ein einzelnes Video handelt.
+„Playlist Extractor“ und „Bulk Import“ können zusammengelegt werden: Der Benutzer kann einen Playlist‑Link einfügen oder mehrere Links mit Komma/Zeilenumbruch trennen; das Backend löst die Links erst zur Laufzeit auf (JIT‑Modell).
+Die Menüleiste oben erhält einen Fullscreen‑Schalter (ersetzt den bisherigen „Menü ausblenden“-Button). Beim Aktivieren des Vollbilds scrollt die Top‑Leiste nach oben aus dem Sichtfeld, kommt aber beim Überfahren mit der Maus zurück.
+3. Verbesserungen beim Video‑Loading
+Robuste Lade‑Logik
+Entwickeln Sie einen Video‑Loader mit Error‑Handling: Wenn ein Video nach einem Timeout (z. B. 10 s) nicht startet oder nur 10 s spielt, soll automatisch ein Reload erfolgen. Verwenden Sie das onerror‑ und onstalled‑Event der Video‑Elemente.
+Setzen Sie ein Maximum von zwei automatischen Reloads; falls das Video wieder scheitert, wird es aus der Playlist entfernt und in einer Server‑tabelle „Fehlerhafte Links“ gespeichert.
+Protile sollten in der UI keine farbigen Statusmeldungen anzeigen (wie gewünscht). Informationen werden im Backend geloggt und können über eine Admin‑Seite eingesehen werden.
+Logging und Überwachung
+Im Backend wird eine Tabelle video_errors angelegt (Felder: URL, Fehlergrund, Zeitstempel, Benutzer). Schreiben Sie Logs bei jedem fehlgeschlagenen Ladevorgang. Optional: Export als CSV/JSON.
+Implementieren Sie einen einfachen Admin‑Dashboard (z. B. unter /admin/logs), der eine Liste der fehlgeschlagenen Links anzeigt. So kann der Betreiber Ursachen analysieren.
+JIT‑Auflösung weiterentwickeln
+Da die Videolinks kurz vor dem Start generiert werden sollen, verbessern Sie das API‑Modul. Es sollte die Auflösungsskripte für alle unterstützen Websites (YouTube, Vimeo, Pornhub, etc.) kapseln und einfach erweiterbar sein. Für zukünftige Anbieter wird ein neues Modul unter gridplay-api-v2/providers/<anbieter>.js erstellt.
+Für HLS‑Streams nutzen Sie hls.js im Frontend; Fallback zu MP4‑URLs falls HLS fehlschlägt.
+4. Playlist‑ und Favoriten‑Funktionen
+Playlist‑Editor überarbeiten
+Es wird ein separates Fenster oder Modal geschaffen, das die aktuelle Playlist eines Tiles oder die globale Playlist anzeigt. Dort kann der Benutzer die Reihenfolge per Drag‑and‑Drop ändern, Clips löschen oder hinzufügen. Verwenden Sie eine Bibliothek wie Sortable.js für die Verschiebe‑Funktion.
+Egal, wie die Playlist entstanden ist (manuelle Eingabe, Auto‑Mix, globale Suche), der Editor muss denselben Daten‑Struktur (z. B. Array aus Objekten mit URL, Titel, Vorschaubild) nutzen.
+Speichern Sie Playlists serverseitig unter dem Nutzerkonto, damit sie bei späteren Sessions wieder verfügbar sind. Es sollten öffentliche und private Playlists möglich sein. Öffentliche Playlists erscheinen im Katalog, sind durchsuchbar und bewertbar.
+Katalog & Suchfunktion
+Erstellen Sie eine Seite „Katalog“, die alle öffentlichen Playlists und Einzel‑Videos listet. Es gibt Filter (Kategorie, Dauer, Anbieter, Bewertung) und Suchfelder. Realisieren Sie die Suche über einen Datenbankindex (z. B. PostgreSQL tsvector).
+Optionale Integration externer Suchen: PeerTube nutzt z. B. den Sepia‑Suchindex. Für GridPlay könnte man einen eigenen Aggregator bauen oder externe APIs (sofern legal) anbinden.
+Bewertungen und Kommentare
+Für jedes Video und jede Playlist können Benutzer Sterne‑Bewertungen (1–5) abgeben. Speichern Sie Bewertungen in einer Tabelle (Nutzer‑ID, Objekt‑ID, Wert, Zeitstempel). Zeigen Sie den Durchschnitt und Anzahl Bewertungen an.
+Kommentar‑Funktionen lassen sich mit einem bestehenden Kommentar‑System wie Artalk integrieren – diese Open‑Source‑Software (Go‑Backend) bietet ein leichtgewichtiges Kommentar‑Widget. Alternativ kann ein eigenes System mit PostgreSQL erstellt werden.
+Mitgliedersystem & Social Features
+Registrierung/Anmeldung: Implementieren Sie ein Formular für neue Benutzer (E‑Mail, Benutzername, Passwort). Nutzen Sie verschlüsselte Passwörter (bcrypt). Optional OAuth‑Logins über Google, GitHub etc.
+Profile: Jeder Benutzer besitzt ein Profil (Avatar, Bio, gespeicherte Favoriten und Playlists, Bewertungen). Stellen Sie eine Profil‑Seite bereit, die von anderen einsehbar ist (Datenschutz‑Einstellungen beachten).
+Messaging: Für private Nachrichten kann ein leichtgewichtiges Chat‑System implementiert werden, z. B. mit Socket.io für WebSockets. Da dies viel Aufwand bedeutet, kann in der ersten Version ein einfaches Nachrichtensystem (asynchron, ohne Live‑Push) genügen.
+Follower‑/Freundschafts‑System: Benutzer können anderen folgen, um ihre öffentlichen Playlists und Favoriten im Feed zu sehen. Dies ist optional; Start mit „Abonnieren“ von Playlists genügt.
+Als Alternative zum vollständigen Eigenausbau kann man ein bestehendes Open‑Source‑Social‑Network wie OSSN (PHP) betrachten. Da das aktuelle Projekt auf Node.js/JS basiert, wäre eine Integration schwierig; besser ist es, die Social‑Features direkt im eigenen Backend aufzubauen, um die Kontrolle zu behalten.
+5. Monetarisierungskonzept
+Werbung: Integrieren Sie ein selbst gehostetes Werbesystem wie Revive Adserver (Open‑Source). Platzieren Sie dezente Werbe‑Banner oder Pre‑Roll‑Ads. Da die Plattform sensible Inhalte hosten könnte, müssen jugendschutzrechtliche und datenschutzrechtliche Vorgaben beachtet werden.
+Affiliate‑Links: Verlinken Sie die Videoquellen mit Affiliate‑IDs, sofern Anbieter wie Pornhub oder andere Portale ein Partnerprogramm anbieten. Dies könnte über Parameter in den URLs realisiert werden.
+Premium‑Abos: Bieten Sie eine kostenlose Basisversion mit begrenzter Videoqualität/Anzahl gleichzeitig abspielbarer Videos an. Gegen Gebühr (z. B. monatlich) erhält man höhere Auflösungen, schnellere Playlist‑Generierung, werbefreie Nutzung und Zugriff auf mehr Suchanbieter. Zahlungssysteme wie Stripe lassen sich via API integrieren.
+Donations / Sponsoring: Da es sich um ein Nischenprodukt handelt, könnten Spenden über Patreon oder Ko‑fi eingebunden werden. Das Vorbild PeerTube finanziert viele Funktionen durch Spenden.
+6. Recherche weiterer Anbieter und Konkurrenz
+Eine Liste potentieller Video‑Quellen muss zusammengestellt werden. Neben YouTube und Vimeo sollte der API‑Scraper für populäre Video‑Hosting‑Sites erweitert werden (z. B. Dailymotion, Twitch für VODs, Bilibili). Für pornografische Seiten werden derzeit PMVHaven und XVideos unterstützt. Für alle nicht explizit unterstützten Sites könnten Sie die Links direkt abspielen lassen, wenn sie eine MP4‑ oder HLS‑URL enthalten.
+Der Markt für ein solches Multi‑Video‑Tool mit Social‑Features ist überschaubar. Konkurrenz gibt es im professionellen Bereich (Multi‑Stream‑Monitore) und im Open‑Source‑Bereich (GridPlayer, StreamGrid). PeerTube ist die relevanteste Alternative im Bereich Video‑Netzwerke, bietet aber keine Mehrfach‑Ansicht. Ein fokussiertes Produkt mit reibungsloser Wiedergabe und Playlist‑Netzwerk könnte eine Nische besetzen.
+Fazit und nächste Schritte
+
+Das GridPlay‑Projekt bietet eine hervorragende Grundlage für ein vielseitiges Multi‑Video‑Tool. Um es zu einer skalierbaren Plattform auszubauen, sind eine Code‑Modularisierung, ein neues UI‑Konzept mit radialen Menüs, ein robustes Video‑Loading sowie ein Mitglieder‑ und Playlist‑System erforderlich. Bestehende Open‑Source‑Komponenten (Sortable.js für Drag‑and‑Drop, Artalk für Kommentare, Revive Adserver für Werbung) können genutzt werden, um Entwicklungsaufwand zu sparen. Die obige Checkliste beschreibt jede Änderung in kleinen, nachvollziehbaren Schritten – so können zwei KI‑Agenten parallel daran arbeiten, ohne sich gegenseitig zu behindern.

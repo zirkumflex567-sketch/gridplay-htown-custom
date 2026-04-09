@@ -2,5 +2,12 @@
   "name": "gridplay-api-v2",
   "version": "2.0.0",
   "private": true,
-  "main": "server.js"
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test test/unit/*.test.js test/integration/*.test.js",
+    "test:unit": "node --test test/unit/*.test.js",
+    "test:integration": "node --test test/integration/*.test.js",
+    "test:smoke": "node --test test/smoke/*.test.js"
+  }
 }

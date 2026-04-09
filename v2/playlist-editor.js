@@ -245,7 +245,7 @@ class PlaylistEditorClass {
        const nextItem = this.queue[nextIndex];
        const div = document.createElement('div');
        div.className = 'pe-status-upcoming-item';
-       div.textContent = \`\${i}. \${nextItem.title || nextItem.url}\`;
+       div.textContent = `${i}. ${nextItem.title || nextItem.url}`;
        this.els.statusUpcoming.appendChild(div);
     }
   }

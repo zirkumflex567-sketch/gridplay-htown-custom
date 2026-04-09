@@ -10,6 +10,22 @@ const PORT = Number(process.env.PORT || 3350);
 const PMVHAVEN_HOSTS = new Set(['pmvhaven.com', 'www.pmvhaven.com']);
 const MEDIA_HOSTS = new Set(['video.pmvhaven.com']);
 const PLAYLIST_ID_PATH_REGEX = /\/playlists\/([a-f0-9]{24})(?:[/?#]|$)/i;
+const PAWG_KEYWORDS = [
+    'pawg',
+    'pmv',
+    'bubble butt',
+    'big ass',
+    'thick',
+    'twerk',
+    'curvy'
+];
+const PMVHAVEN_DISCOVERY_URLS = [
+    'https://pmvhaven.com/videos',
+    'https://pmvhaven.com/videos?sort=trending',
+    'https://pmvhaven.com/search?query=pawg',
+    'https://pmvhaven.com/search?query=pmv'
+];
+const FALLBACK_DURATION_SECONDS = 240;
 
 function sendJson(res, statusCode, body) {
     const payload = JSON.stringify(body);
@@ -60,7 +76,8 @@ function validateUpstreamMediaUrl(rawUrl) {
     const parsed = getValidatedHttpsUrl(rawUrl);
     const host = parsed.hostname.toLowerCase();
 
-    if (!MEDIA_HOSTS.has(host)) {
+    const isArchiveHost = host === 'archive.org' || host.endsWith('.archive.org');
+    if (!MEDIA_HOSTS.has(host) && !isArchiveHost) {
         throw new Error('Upstream media host is not allowlisted.');
     }
 
@@ -287,6 +304,337 @@ function collectPlaylistLinksFromHtml(html) {
     return links;
 }
 
+function containsPawgKeywords(text) {
+    if (!text || typeof text !== 'string') {
+        return false;
+    }
+
+    const normalized = text.toLowerCase();
+    return PAWG_KEYWORDS.some(keyword => normalized.includes(keyword));
+}
+
+function extractTitleFromHtml(html) {
+    const matched = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+    if (!matched || !matched[1]) {
+        return null;
+    }
+
+    return normalizeEscapes(matched[1])
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
+function parseHmsDurationToSeconds(rawDuration) {
+    if (!rawDuration || typeof rawDuration !== 'string') {
+        return null;
+    }
+
+    const parts = rawDuration.trim().split(':').map(part => Number(part));
+    if (parts.length < 2 || parts.length > 3 || parts.some(part => !Number.isFinite(part))) {
+        return null;
+    }
+
+    const normalized = parts.length === 3 ? parts : [0, parts[0], parts[1]];
+    const [hours, minutes, seconds] = normalized;
+    return (hours * 3600) + (minutes * 60) + seconds;
+}
+
+function extractDurationSecondsFromHtml(html) {
+    const numeric = html.match(/"duration"\s*:\s*(\d{2,6})/i);
+    if (numeric && numeric[1]) {
+        const parsed = Number(numeric[1]);
+        if (Number.isFinite(parsed) && parsed > 0) {
+            return parsed;
+        }
+    }
+
+    const iso = html.match(/"duration"\s*:\s*"PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?"/i);
+    if (iso) {
+        const hours = Number(iso[1] || 0);
+        const minutes = Number(iso[2] || 0);
+        const seconds = Number(iso[3] || 0);
+        const total = (hours * 3600) + (minutes * 60) + seconds;
+        if (total > 0) {
+            return total;
+        }
+    }
+
+    return null;
+}
+
+async function fetchHtmlWithHeaders(url, userAgent) {
+    const upstream = await fetch(url, {
+        redirect: 'follow',
+        headers: {
+            'User-Agent': userAgent,
+            Accept: 'text/html,application/xhtml+xml'
+        }
+    });
+
+    if (!upstream.ok) {
+        throw new Error(`HTTP ${upstream.status}`);
+    }
+
+    return upstream.text();
+}
+
+async function collectPmvhavenPawgItems(targetCount) {
+    const wantedCount = Math.max(1, Number(targetCount) || 1);
+    const candidateLinks = [];
+    const seenLinks = new Set();
+
+    for (const discoveryUrl of PMVHAVEN_DISCOVERY_URLS) {
+        try {
+            const html = await fetchHtmlWithHeaders(discoveryUrl, 'GridPlayPawgDiscovery/1.0');
+            const links = collectPlaylistLinksFromHtml(html);
+            for (const link of links) {
+                if (seenLinks.has(link)) {
+                    continue;
+                }
+                seenLinks.add(link);
+                candidateLinks.push(link);
+            }
+        } catch (_) {
+            continue;
+        }
+    }
+
+    const maxCandidates = Math.min(candidateLinks.length, Math.max(wantedCount * 6, 20));
+    const items = [];
+    const seenMediaUrls = new Set();
+
+    for (let i = 0; i < maxCandidates; i++) {
+        if (items.length >= wantedCount) {
+            break;
+        }
+
+        const pageUrl = candidateLinks[i];
+        try {
+            const html = await fetchHtmlWithHeaders(pageUrl, 'GridPlayPawgResolver/1.0');
+            const title = extractTitleFromHtml(html) || `PMVHaven Clip ${items.length + 1}`;
+            const keywordContext = `${title} ${pageUrl} ${html.slice(0, 2500)}`;
+            if (!containsPawgKeywords(keywordContext)) {
+                continue;
+            }
+
+            const picked = pickBestMediaUrl(html);
+            if (seenMediaUrls.has(picked.mediaUrl)) {
+                continue;
+            }
+            seenMediaUrls.add(picked.mediaUrl);
+
+            const durationSeconds = extractDurationSecondsFromHtml(html);
+            items.push({
+                id: null,
+                title,
+                pageUrl,
+                mediaUrl: picked.mediaUrl,
+                playbackUrl: `/gridplay-api/stream?url=${encodeURIComponent(picked.mediaUrl)}`,
+                streamUrl: `/gridplay-api/stream?url=${encodeURIComponent(picked.mediaUrl)}`,
+                mediaType: picked.chosenType,
+                durationSeconds,
+                source: 'pmvhaven'
+            });
+        } catch (_) {
+            continue;
+        }
+    }
+
+    return items;
+}
+
+function pickArchiveMp4File(files) {
+    if (!Array.isArray(files)) {
+        return null;
+    }
+
+    const mp4Candidates = files.filter(file => {
+        if (!file || typeof file.name !== 'string') {
+            return false;
+        }
+        const name = file.name.toLowerCase();
+        const format = typeof file.format === 'string' ? file.format.toLowerCase() : '';
+        return name.endsWith('.mp4') || format.includes('mpeg4');
+    });
+
+    if (mp4Candidates.length === 0) {
+        return null;
+    }
+
+    mp4Candidates.sort((a, b) => {
+        const aSize = Number(a.size) || 0;
+        const bSize = Number(b.size) || 0;
+        return bSize - aSize;
+    });
+
+    return mp4Candidates[0];
+}
+
+async function collectFallbackPawgItems(targetCount) {
+    const wantedCount = Math.max(1, Number(targetCount) || 1);
+    const searchUrl = new URL('https://archive.org/advancedsearch.php');
+    searchUrl.searchParams.set('q', '(title:(pawg OR pmv) OR subject:(pawg OR pmv)) AND mediatype:(movies)');
+    searchUrl.searchParams.set('fl[]', 'identifier,title');
+    searchUrl.searchParams.set('rows', String(Math.max(20, wantedCount * 6)));
+    searchUrl.searchParams.set('page', '1');
+    searchUrl.searchParams.set('output', 'json');
+
+    const searchResponse = await fetch(searchUrl, {
+        headers: {
+            'User-Agent': 'GridPlayPawgFallback/1.0',
+            Accept: 'application/json'
+        }
+    });
+
+    if (!searchResponse.ok) {
+        throw new Error(`Fallback search failed with HTTP ${searchResponse.status}`);
+    }
+
+    const searchPayload = await searchResponse.json();
+    const docs = searchPayload && searchPayload.response && Array.isArray(searchPayload.response.docs)
+        ? searchPayload.response.docs
+        : [];
+
+    const items = [];
+    const seenUrls = new Set();
+    for (const doc of docs) {
+        if (items.length >= wantedCount) {
+            break;
+        }
+
+        const identifier = doc && typeof doc.identifier === 'string'
+            ? doc.identifier
+            : null;
+        if (!identifier) {
+            continue;
+        }
+
+        try {
+            const metadataResponse = await fetch(`https://archive.org/metadata/${encodeURIComponent(identifier)}`, {
+                headers: {
+                    'User-Agent': 'GridPlayPawgFallback/1.0',
+                    Accept: 'application/json'
+                }
+            });
+            if (!metadataResponse.ok) {
+                continue;
+            }
+
+            const metadata = await metadataResponse.json();
+            const pickedFile = pickArchiveMp4File(metadata.files);
+            if (!pickedFile) {
+                continue;
+            }
+
+            const mediaUrl = `https://archive.org/download/${encodeURIComponent(identifier)}/${encodeURIComponent(pickedFile.name)}`;
+            if (seenUrls.has(mediaUrl)) {
+                continue;
+            }
+            seenUrls.add(mediaUrl);
+
+            const durationSeconds = parseHmsDurationToSeconds(pickedFile.length);
+            items.push({
+                id: null,
+                title: (doc.title && String(doc.title).trim()) || identifier,
+                pageUrl: `https://archive.org/details/${encodeURIComponent(identifier)}`,
+                mediaUrl,
+                playbackUrl: `/gridplay-api/stream?url=${encodeURIComponent(mediaUrl)}`,
+                streamUrl: `/gridplay-api/stream?url=${encodeURIComponent(mediaUrl)}`,
+                mediaType: 'mp4',
+                durationSeconds,
+                source: 'fallback'
+            });
+        } catch (_) {
+            continue;
+        }
+    }
+
+    return items;
+}
+
+function capItemsBySelectionMode(items, mode, count, targetMinutes) {
+    if (!Array.isArray(items)) {
+        return [];
+    }
+
+    const safeCount = Math.min(Math.max(Number(count) || 8, 1), 50);
+    if (mode !== 'duration') {
+        return items.slice(0, safeCount);
+    }
+
+    const targetSeconds = Math.max(Number(targetMinutes) || 20, 1) * 60;
+    const selected = [];
+    let total = 0;
+    for (const item of items) {
+        if (selected.length >= 50) {
+            break;
+        }
+        selected.push(item);
+        total += Number(item.durationSeconds) > 0
+            ? Number(item.durationSeconds)
+            : FALLBACK_DURATION_SECONDS;
+        if (total >= targetSeconds && selected.length > 0) {
+            break;
+        }
+    }
+
+    return selected;
+}
+
+async function handlePawgMix(reqUrl, res) {
+    const mode = reqUrl.searchParams.get('mode') === 'duration' ? 'duration' : 'count';
+    const count = Math.min(Math.max(Number(reqUrl.searchParams.get('count')) || 8, 1), 50);
+    const targetMinutes = Math.min(Math.max(Number(reqUrl.searchParams.get('targetMinutes')) || 25, 1), 240);
+
+    const desiredSeedCount = mode === 'duration'
+        ? Math.min(Math.max(Math.ceil(targetMinutes / 3), 8), 50)
+        : count;
+
+    try {
+        const pmvhavenItems = await collectPmvhavenPawgItems(desiredSeedCount);
+        const missingCount = Math.max(desiredSeedCount - pmvhavenItems.length, 0);
+        let fallbackItems = [];
+
+        if (missingCount > 0) {
+            try {
+                fallbackItems = await collectFallbackPawgItems(missingCount);
+            } catch (_) {
+                fallbackItems = [];
+            }
+        }
+
+        const combinedItems = capItemsBySelectionMode(
+            [...pmvhavenItems, ...fallbackItems],
+            mode,
+            count,
+            targetMinutes
+        );
+
+        const estimatedDurationSeconds = combinedItems.reduce((total, item) => {
+            const seconds = Number(item.durationSeconds) > 0
+                ? Number(item.durationSeconds)
+                : FALLBACK_DURATION_SECONDS;
+            return total + seconds;
+        }, 0);
+
+        sendJson(res, 200, {
+            mode,
+            countRequested: count,
+            targetMinutesRequested: targetMinutes,
+            sourcePriority: ['pmvhaven', 'fallback'],
+            count: combinedItems.length,
+            estimatedDurationMinutes: Number((estimatedDurationSeconds / 60).toFixed(1)),
+            breakdown: {
+                pmvhaven: combinedItems.filter(item => item.source === 'pmvhaven').length,
+                fallback: combinedItems.filter(item => item.source === 'fallback').length
+            },
+            items: combinedItems
+        });
+    } catch (error) {
+        sendJson(res, 502, { error: `PAWG mix generation failed: ${error.message}` });
+    }
+}
+
 function extractPlaylistItemsFromNuxt(html, playlistUrl) {
     const playlistId = getPlaylistIdFromUrl(playlistUrl);
     if (!playlistId) {
@@ -496,12 +844,16 @@ async function handleStream(req, reqUrl, res) {
     }
 
     try {
+        const upstreamHost = mediaUrl.hostname.toLowerCase();
         const headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
             'Referer': 'https://pmvhaven.com/',
             'Accept': '*/*',
             'Origin': 'https://pmvhaven.com'
         };
+        if (MEDIA_HOSTS.has(upstreamHost)) {
+            headers.Referer = 'https://pmvhaven.com/';
+        }
         const range = req.headers.range;
         if (range) {
             headers.Range = range;
@@ -568,7 +920,7 @@ async function handleStream(req, reqUrl, res) {
                     });
                 }
 
-                // Handle standalone URI lines
+                // A line in M3U8 that doesn't start with # and isn't empty is a URI.
                 try {
                     const absoluteUrl = new URL(trimmed, baseUrl).toString();
                     return `/gridplay-api/stream?url=${encodeURIComponent(absoluteUrl)}`;
@@ -619,6 +971,11 @@ const server = http.createServer(async (req, res) => {
 
     if (reqUrl.pathname === '/playlist' && req.method === 'GET') {
         await handlePlaylist(reqUrl, res);
+        return;
+    }
+
+    if (reqUrl.pathname === '/pawg-mix' && req.method === 'GET') {
+        await handlePawgMix(reqUrl, res);
         return;
     }
 

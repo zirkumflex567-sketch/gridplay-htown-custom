@@ -26,6 +26,7 @@ A powerful, intuitive multi-video grid player that lets you watch multiple video
 - **Closed captions** enabled by default when available
 - **Save/Load configurations** - preserve your video setups
 - **Tile playlist queue** - paste multiple links and play them sequentially in one selected tile
+- **PAWG PMV Auto Mix module** - generate PMVHaven-priority playlists with optional endless loop per tile
 - **Hide/show controls bar** - quick near-fullscreen workspace toggle
 - **Responsive design** - works on any screen size
 - **No installation** - runs entirely in your browser
@@ -51,6 +52,13 @@ A powerful, intuitive multi-video grid player that lets you watch multiple video
 - Click **Add Playlist** (or press Enter with multiple links) to queue links in that tile
 - Queue advances automatically when HTML5/direct stream playback ends or errors
 - Existing **Add Video** behavior is unchanged for single-link add flow
+
+### PAWG PMV Auto Mix Module
+- Open **Generate PAWG Mix** from the control bar
+- Choose target tile (`New Tile` or existing `Tile N`)
+- Select mode: `Queue Size` or `Target Duration`
+- Keep `Endless loop` enabled (default) to recycle the generated queue
+- Source priority is PMVHaven first, with safe direct-play fallback items if PMVHaven count is insufficient
 
 ### Controls Bar Toggle
 - Click the small top-right toggle button (`▴` / `▾`) to hide/show the top controls bar

@@ -385,6 +385,21 @@
             resize: none;
         }
 
+        .pawg-added-list {
+            margin-top: 12px;
+            max-height: 180px;
+            overflow: auto;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 10px;
+            background: rgba(0, 0, 0, 0.45);
+            padding: 10px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 12px;
+            line-height: 1.45;
+            color: #d9d9d9;
+            white-space: pre-wrap;
+        }
+
         .progress-bar {
             height: 6px;
             background: rgba(255, 255, 255, 0.05);
@@ -614,6 +629,7 @@
                         <button class="btn" id="pawgGenerateBtn" onclick="generatePawgMixAndStart()" style="background:#8e44ad; flex: 1;">Generate PAWG Mix</button>
                     </div>
                     <textarea id="pawgMixStatus" readonly placeholder="Generation status and source breakdown will appear here..."></textarea>
+                    <div id="pawgAddedList" class="pawg-added-list">Added videos will appear here after generation.</div>
                 </div>
             </div>
         </div>
@@ -968,21 +984,55 @@
             return parsed.pathname.includes('/video/') || parsed.pathname.includes('/videos/');
         }
 
-        async function resolvePmvhavenUrl(url) {
-            const response = await fetch(`${GRIDPLAY_API_BASE}/resolve?url=${encodeURIComponent(url)}`);
-            let payload = null;
+        function summarizeNonJsonResponse(rawText) {
+            if (typeof rawText !== 'string' || rawText.trim().length === 0) {
+                return 'Received non-JSON response from server.';
+            }
 
+            const compact = rawText
+                .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+                .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+                .replace(/<[^>]+>/g, ' ')
+                .replace(/\s+/g, ' ')
+                .trim();
+
+            if (!compact) {
+                return 'Received HTML error page from server.';
+            }
+
+            return compact.slice(0, 220);
+        }
+
+        async function readApiJsonOrThrow(response, fallbackMessage) {
+            const contentType = (response.headers.get('content-type') || '').toLowerCase();
+            const expectsJson = contentType.includes('application/json');
+
+            if (!expectsJson) {
+                const rawText = await response.text();
+                const summary = summarizeNonJsonResponse(rawText);
+                throw new Error(`${fallbackMessage} (HTTP ${response.status}) - ${summary}`);
+            }
+
+            let payload = null;
             try {
                 payload = await response.json();
             } catch (_) {
-                payload = null;
+                throw new Error(`${fallbackMessage} (HTTP ${response.status}) - Invalid JSON response.`);
             }
 
-            if (!response.ok || !payload || !payload.streamUrl) {
-                const message = payload && payload.error
-                    ? payload.error
-                    : 'Could not resolve PMVHaven video URL.';
-                throw new Error(message);
+            if (!response.ok) {
+                throw new Error(payload && payload.error ? payload.error : `${fallbackMessage} (HTTP ${response.status}).`);
+            }
+
+            return payload;
+        }
+
+        async function resolvePmvhavenUrl(url) {
+            const response = await fetch(`${GRIDPLAY_API_BASE}/resolve?url=${encodeURIComponent(url)}`);
+            const payload = await readApiJsonOrThrow(response, 'Could not resolve PMVHaven video URL');
+
+            if (!payload.streamUrl) {
+                throw new Error('Could not resolve PMVHaven video URL.');
             }
 
             return payload;
@@ -1575,9 +1625,7 @@
 
             try {
                 const response = await fetch(`${GRIDPLAY_API_BASE}/playlist?url=${encodeURIComponent(url)}`);
-                const data = await response.json();
-
-                if (!response.ok) throw new Error(data.error || 'Failed to extract playlist');
+                const data = await readApiJsonOrThrow(response, 'Failed to extract playlist');
 
                 if (data.links && data.links.length > 0) {
                     extractedLinks = data.links;
@@ -1754,6 +1802,25 @@
             document.getElementById('pawgMixStatus').value = text;
         }
 
+        function writePawgAddedList(items) {
+            const panel = document.getElementById('pawgAddedList');
+            if (!panel) {
+                return;
+            }
+
+            if (!Array.isArray(items) || items.length === 0) {
+                panel.textContent = 'No videos added yet.';
+                return;
+            }
+
+            panel.textContent = items.map((item, index) => {
+                const title = item.title || `Video ${index + 1}`;
+                const source = item.source || 'unknown';
+                const url = item.playbackUrl || item.streamUrl || item.mediaUrl || '(missing playback URL)';
+                return `${index + 1}. ${title}\n   source: ${source}\n   playback: ${url}`;
+            }).join('\n\n');
+        }
+
         function pickMixPlayableSource(item) {
             return item.playbackUrl || item.streamUrl || item.mediaUrl || item.pageUrl || null;
         }
@@ -1784,6 +1851,7 @@
             const generateBtn = document.getElementById('pawgGenerateBtn');
             generateBtn.disabled = true;
             writePawgStatus('Generating PAWG PMV mix...\nPriority: PMVHaven -> fallback sources');
+            writePawgAddedList([]);
 
             try {
                 const params = new URLSearchParams({
@@ -1792,11 +1860,7 @@
                     targetMinutes: String(targetMinutes)
                 });
                 const response = await fetch(`${GRIDPLAY_API_BASE}/pawg-mix?${params.toString()}`);
-                const payload = await response.json();
-
-                if (!response.ok) {
-                    throw new Error(payload.error || 'Mix generation failed.');
-                }
+                const payload = await readApiJsonOrThrow(response, 'Mix generation failed');
 
                 if (!Array.isArray(payload.items) || payload.items.length === 0) {
                     throw new Error('No playable mix items returned.');
@@ -1837,15 +1901,18 @@
                     `Generated ${queueEntries.length + 1} items (${mode === 'duration' ? `${targetMinutes} min target` : `${queueSize} count target`}).`,
                     `PMVHaven items: ${payload.breakdown.pmvhaven}`,
                     `Fallback items: ${payload.breakdown.fallback}`,
+                    `Media policy: ${payload.mediaPolicy && payload.mediaPolicy.hlsFallbackUsed ? 'HLS fallback used' : 'MP4-only output'}`,
                     `Estimated duration: ${payload.estimatedDurationMinutes} min`,
                     `Endless loop: ${endlessLoop ? 'on' : 'off'}`
                 ].join('\n');
 
                 writePawgStatus(detail);
+                writePawgAddedList(Array.isArray(payload.added) ? payload.added : cappedItems);
                 showNotification(`PAWG mix started in tile (${queueEntries.length + 1} items)`);
                 togglePawgMixModule();
             } catch (error) {
                 writePawgStatus(`Error: ${error.message}`);
+                writePawgAddedList([]);
                 showNotification(error.message, 'warning');
             } finally {
                 generateBtn.disabled = false;

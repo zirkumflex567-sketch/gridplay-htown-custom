@@ -71,8 +71,18 @@ test('pawg mix endpoint returns playable items with source metadata', async () =
         );
 
         assert.equal(payload.sourcePriority[0], 'pmvhaven');
+        assert.equal(payload.mediaPolicy.preferredType, 'mp4');
+        assert.equal(typeof payload.mediaPolicy.hlsFallbackUsed, 'boolean');
+        assert.ok(Array.isArray(payload.added), 'Expected added list to echo selected videos.');
         assert.equal(typeof payload.breakdown.pmvhaven, 'number');
         assert.equal(typeof payload.breakdown.fallback, 'number');
+
+        const hasM3u8 = payload.items.some(item => item.mediaType === 'm3u8');
+        if (payload.mediaPolicy.hlsFallbackUsed) {
+            assert.ok(hasM3u8, 'Expected at least one HLS item when fallback flag is set.');
+        } else {
+            assert.equal(hasM3u8, false, 'Expected MP4-only items when HLS fallback is disabled.');
+        }
     } finally {
         await stopServer(serverProcess);
     }

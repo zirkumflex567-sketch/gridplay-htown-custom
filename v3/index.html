@@ -34,21 +34,23 @@
             gap: 15px;
             align-items: center;
             box-shadow: 0 2px 10px rgba(0,0,0,0.3);
-            transition: transform 0.25s ease, opacity 0.25s ease;
-            transform: translateY(0);
-            opacity: 1;
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s;
             position: relative;
             z-index: 1200;
         }
 
-        .controls.hidden {
-            display: none;
-        }
-
-        .fullscreen-mode .controls.fs-hidden {
-            transform: translateY(calc(-100% - 10px));
+        .controls.fs-hidden {
+            transform: translateY(-100%);
             opacity: 0;
             pointer-events: none;
+            position: fixed;
+            width: 100%;
+        }
+
+        .controls.fs-reveal {
+            transform: translateY(0);
+            opacity: 1;
+            pointer-events: auto;
         }
 
         .url-input {
@@ -123,9 +125,11 @@
         .video-grid {
             flex: 1;
             display: grid;
-            gap: 10px;
-            padding: 10px;
+            gap: 12px;
+            padding: 12px;
             overflow: auto;
+            align-content: stretch;
+            justify-content: stretch;
         }
 
         .video-item {
@@ -139,12 +143,23 @@
             display: flex;
             align-items: center;
             justify-content: center;
+            width: 100%;
+            height: 100%;
         }
 
         .video-item.selected-slot {
             border-color: #00bcd4;
-            box-shadow: 0 0 0 2px rgba(0, 188, 212, 0.35);
+            box-shadow: 0 0 12px rgba(0, 188, 212, 0.5);
         }
+
+        /* Slot specific colored borders on hover */
+        .video-item.hover-active { border-width: 3px; }
+        .video-item[data-slot="1"].hover-active { border-color: #27ae60 !important; box-shadow: 0 0 20px rgba(39, 174, 96, 0.4); }
+        .video-item[data-slot="2"].hover-active { border-color: #e74c3c !important; box-shadow: 0 0 20px rgba(231, 76, 60, 0.4); }
+        .video-item[data-slot="3"].hover-active { border-color: #3498db !important; box-shadow: 0 0 20px rgba(52, 152, 219, 0.4); }
+        .video-item[data-slot="4"].hover-active { border-color: #f1c40f !important; box-shadow: 0 0 20px rgba(241, 196, 15, 0.4); }
+        .video-item[data-slot="5"].hover-active { border-color: #9b59b6 !important; box-shadow: 0 0 20px rgba(155, 89, 182, 0.4); }
+        .video-item[data-slot="6"].hover-active { border-color: #e67e22 !important; box-shadow: 0 0 20px rgba(230, 126, 34, 0.4); }
 
         .video-item video {
             width: 100%;
@@ -203,6 +218,45 @@
 
         .video-item:hover .video-remove {
             opacity: 1;
+        }
+
+        /* Custom Video Controls Overlay */
+        .custom-video-controls {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: linear-gradient(transparent, rgba(0,0,0,0.8));
+            padding: 10px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            opacity: 0;
+            transition: opacity 0.3s;
+            z-index: 10;
+        }
+
+        .video-item:hover .custom-video-controls {
+            opacity: 1;
+        }
+
+        .cv-btn {
+            background: none;
+            border: none;
+            color: white;
+            cursor: pointer;
+            font-size: 18px;
+            padding: 5px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .cv-spacer { flex: 1; }
+
+        .cv-volume {
+            width: 60px;
+            accent-color: #00bcd4;
         }
 
         .tile-menu-shell {
@@ -605,6 +659,165 @@
             top: 0;
             left: 0;
             right: 0;
+            height: 15px;
+            z-index: 1300;
+            display: none;
+        }
+
+        .fullscreen-mode .fs-reveal-zone {
+            display: block;
+        }
+
+        /* Global Movable Menu Button */
+        #globalMenuBtn {
+            position: fixed;
+            z-index: 3000;
+            width: 54px;
+            height: 54px;
+            border-radius: 50%;
+            background: rgba(15, 23, 36, 0.9);
+            backdrop-filter: blur(8px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            cursor: grab;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+            transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            user-select: none;
+        }
+
+        #globalMenuBtn:hover {
+            background: rgba(25, 35, 50, 0.98);
+            transform: scale(1.08);
+        }
+
+        #globalMenuBtn:active {
+            cursor: grabbing;
+        }
+
+        .global-radial-menu {
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            width: 0;
+            height: 0;
+            pointer-events: none;
+            display: none;
+        }
+
+        .global-radial-menu.open {
+            display: block;
+            pointer-events: auto;
+        }
+
+        .radial-btn {
+            position: absolute;
+            width: 38px;
+            height: 38px;
+            border-radius: 50%;
+            background: #2c3e50;
+            border: 1px solid rgba(255,255,255,0.25);
+            color: #ecf0f1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 13px;
+            font-weight: bold;
+            cursor: pointer;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+            transition: transform 0.2s, background 0.2s, opacity 0.2s;
+            opacity: 0;
+            transform: translate(-50%, -50%) scale(0.5);
+        }
+
+        .radial-btn.visible {
+            opacity: 1;
+            transform: translate(-50%, -50%) translate(var(--dx), var(--dy)) scale(1);
+        }
+
+        .radial-btn:hover {
+            background: #34495e;
+            transform: translate(-50%, -50%) translate(var(--dx), var(--dy)) scale(1.1);
+        }
+
+        .tooltip-hint {
+            position: absolute;
+            bottom: -35px;
+            background: rgba(0,0,0,0.85);
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-size: 11px;
+            white-space: nowrap;
+            opacity: 0;
+            transition: opacity 0.2s;
+            pointer-events: none;
+        }
+
+        #globalMenuBtn:hover .tooltip-hint {
+            opacity: 1;
+        }
+
+        /* Slot specific colored borders */
+        .video-item.hover-slot-1 { border-color: #27ae60 !important; box-shadow: 0 0 15px rgba(39, 174, 96, 0.4) !important; }
+        .video-item.hover-slot-2 { border-color: #e74c3c !important; box-shadow: 0 0 15px rgba(231, 76, 60, 0.4) !important; }
+        .video-item.hover-slot-3 { border-color: #3498db !important; box-shadow: 0 0 15px rgba(52, 152, 219, 0.4) !important; }
+        .video-item.hover-slot-4 { border-color: #f1c40f !important; box-shadow: 0 0 15px rgba(241, 196, 15, 0.4) !important; }
+        .video-item.hover-slot-5 { border-color: #9b59b6 !important; box-shadow: 0 0 15px rgba(155, 89, 182, 0.4) !important; }
+        .video-item.hover-slot-6 { border-color: #e67e22 !important; box-shadow: 0 0 15px rgba(230, 126, 34, 0.4) !important; }
+
+        /* Floating Global Menu Button */
+        #globalMenuBtn {
+            position: fixed;
+            z-index: 3000;
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            background: rgba(10, 18, 28, 0.85);
+            backdrop-filter: blur(5px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            cursor: grab;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+            transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275), background 0.2s;
+            user-select: none;
+            left: 50%;
+            bottom: 30px;
+        }
+
+        #globalMenuBtn:hover {
+            background: rgba(16, 29, 42, 0.95);
+            transform: scale(1.1);
+        }
+
+        #globalMenuBtn:active {
+            cursor: grabbing;
+        }
+
+        .global-radial-shell {
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            width: 0;
+            height: 0;
+            pointer-events: none;
+        }
+
+        .global-radial-shell.open {
+            pointer-events: auto;
+        }
+
+        .fs-reveal-zone {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
             height: 24px;
             z-index: 1150;
             display: none;
@@ -632,8 +845,9 @@
                 <button class="btn" onclick="toggleGlobalPlaylistModule()" style="background: #e67e22;">Global Playlist</button>
                 <button class="btn" id="playlistEditorOpenBtn" onclick="openPlaylistEditorForCurrentContext()" style="background: #2c7a7b;">Playlist Editor</button>
                 <button class="btn" id="globalMuteToggle" onclick="toggleGlobalMuteMode()" aria-pressed="false">Global Mute: OFF</button>
-                <button class="btn" onclick="saveConfig()">Save Config</button>
-                <button class="btn" onclick="loadConfig()">Load Config</button>
+                <button class="btn" onclick="saveConfig()" style="background: #2980b9;">Save</button>
+                <button class="btn" onclick="loadConfig()" style="background: #2980b9;">Load</button>
+                <button class="btn" onclick="toggleFullscreen()" style="background: #c0392b; font-weight: bold;">FULLSCREEN</button>
                 <button class="btn danger" onclick="clearAll()">Clear All</button>
             </div>
             <input type="file" id="configInput" accept=".json" style="display:none;">
@@ -2520,11 +2734,17 @@
                     </div>`;
             }
 
-            return `<video autoplay controls muted preload="metadata" playsinline webkit-playsinline="true" style="outline: none;">
-                <source src="${playbackSrc}" type="${playbackType}">
-                <track kind="captions" srclang="en" label="English" default>
-                Your browser does not support the video tag.
-            </video>`;
+            return `<div class="video-container" style="width:100%; height:100%; position:relative;">
+                <video autoplay muted preload="metadata" playsinline webkit-playsinline="true" style="width:100%; height:100%; object-fit:contain; outline: none;">
+                    <source src="${playbackSrc}" type="${playbackType}">
+                </video>
+                <div class="custom-video-controls">
+                    <button class="cv-btn play-pause">⏸</button>
+                    <div class="cv-spacer"></div>
+                    <button class="cv-btn mute-toggle">🔊</button>
+                    <input type="range" class="cv-volume" min="0" max="1" step="0.1" value="1">
+                </div>
+            </div>`;
         }
 
         function wireMediaEvents(videoId, meta = {}) {
@@ -4030,6 +4250,254 @@
         advancePlaylist = async function(videoId) {
             await enqueueAdvancePlaylist(videoId);
         };
+        // --- v3 UI Overhaul Logic ---
+        let isFullscreen = false;
+        let lastHoveredSlot = null;
+        let globalMenuPos = { x: window.innerWidth / 2, y: window.innerHeight - 80 };
+        let isDraggingMenu = false;
+
+        function initV3UI() {
+            // Create Global Menu Button
+            const menuBtn = document.createElement('div');
+            menuBtn.id = 'globalMenuBtn';
+            menuBtn.innerHTML = `◎<div class="tooltip-hint">Shift+Drag: Move<br>Click: Actions</div>`;
+            document.body.appendChild(menuBtn);
+            
+            // Create Radial Menu Shell
+            const radialShell = document.createElement('div');
+            radialShell.className = 'global-radial-menu';
+            menuBtn.appendChild(radialShell);
+
+            // Create fs-reveal zone
+            const revealZone = document.createElement('div');
+            revealZone.className = 'fs-reveal-zone';
+            document.body.appendChild(revealZone);
+
+            setupGlobalMenuInteraction(menuBtn, radialShell);
+            setupHeaderHover(revealZone);
+            updateGlobalMenuPosition(menuBtn);
+            
+            // Initial Grid Slot tagging
+            refreshSlotDataAttributes();
+        }
+
+        function refreshSlotDataAttributes() {
+            document.querySelectorAll('.video-item').forEach((item, idx) => {
+                item.setAttribute('data-slot', (idx + 1).toString());
+                setupTileHover(item);
+            });
+        }
+
+        function setupTileHover(tile) {
+            tile.addEventListener('mouseenter', () => {
+                lastHoveredSlot = tile;
+                tile.classList.add('hover-active');
+            });
+            tile.addEventListener('mouseleave', () => {
+                tile.classList.remove('hover-active');
+            });
+        }
+
+        function setupHeaderHover(zone) {
+            const header = document.querySelector('.controls');
+            zone.addEventListener('mouseenter', () => {
+                if (isFullscreen) header.classList.add('fs-reveal');
+            });
+            header.addEventListener('mouseleave', () => {
+                if (isFullscreen) header.classList.remove('fs-reveal');
+            });
+        }
+
+        function setupGlobalMenuInteraction(btn, shell) {
+            let startX, startY;
+
+            btn.addEventListener('mousedown', (e) => {
+                if (e.shiftKey) {
+                    isDraggingMenu = true;
+                    startX = e.clientX - globalMenuPos.x;
+                    startY = e.clientY - globalMenuPos.y;
+                    btn.classList.add('dragging');
+                    e.preventDefault();
+                }
+            });
+
+            window.addEventListener('mousemove', (e) => {
+                if (isDraggingMenu) {
+                    globalMenuPos.x = e.clientX - startX;
+                    globalMenuPos.y = e.clientY - startY;
+                    updateGlobalMenuPosition(btn);
+                }
+            });
+
+            window.addEventListener('mouseup', () => {
+                isDraggingMenu = false;
+                btn.classList.remove('dragging');
+            });
+
+            btn.addEventListener('click', (e) => {
+                if (e.shiftKey) return;
+                toggleRadialMenu(shell);
+            });
+        }
+
+        function updateGlobalMenuPosition(btn) {
+            btn.style.left = `${globalMenuPos.x}px`;
+            btn.style.top = `${globalMenuPos.y}px`;
+        }
+
+        function toggleRadialMenu(shell) {
+            const isOpen = shell.classList.toggle('open');
+            if (isOpen) {
+                renderRadialActions(shell);
+            }
+        }
+
+        function renderRadialActions(shell) {
+            shell.innerHTML = '';
+            const actions = [
+                { label: 'Q', title: 'Quality', color: '#3498db' },
+                { label: 'R', title: 'Reload', color: '#2ecc71' },
+                { label: 'X', title: 'Replace', color: '#e74c3c' },
+                { label: 'F', title: 'Favorite', color: '#f1c40f' },
+                { label: '★', title: 'Bookmark', color: '#e67e22' }
+            ];
+
+            // Calculate direction towards hovered video if available
+            let angleStart = -Math.PI / 2; // Default Up
+            if (lastHoveredSlot) {
+                const rect = lastHoveredSlot.getBoundingClientRect();
+                const targetX = rect.left + rect.width / 2;
+                const targetY = rect.top + rect.height / 2;
+                angleStart = Math.atan2(targetY - globalMenuPos.y, targetX - globalMenuPos.x);
+            }
+
+            const radius = 65;
+            const spread = Math.PI / 2.5;
+
+            actions.forEach((act, i) => {
+                const btn = document.createElement('div');
+                btn.className = 'radial-btn';
+                btn.innerHTML = act.label;
+                btn.title = act.title;
+                
+                const angle = angleStart - (spread / 2) + (i * (spread / (actions.length - 1)));
+                const dx = Math.cos(angle) * radius;
+                const dy = Math.sin(angle) * radius;
+                
+                btn.style.setProperty('--dx', `${dx}px`);
+                btn.style.setProperty('--dy', `${dy}px`);
+                
+                shell.appendChild(btn);
+                setTimeout(() => btn.classList.add('visible'), i * 40);
+
+                btn.onclick = (e) => {
+                    e.stopPropagation();
+                    handleRadialAction(act.title, lastHoveredSlot);
+                    shell.classList.remove('open');
+                };
+            });
+        }
+
+        function handleRadialAction(action, tile) {
+            if (!tile) {
+                showNotification('No video hovered', 'warning');
+                return;
+            }
+            const videoId = tile.id;
+            const videoData = videos.find(v => v.id === videoId);
+
+            switch(action) {
+                case 'Quality':
+                    cycleQuality(tile);
+                    break;
+                case 'Reload':
+                    if (videoData) updateVideoSlotContent(videoId, videoData.src);
+                    break;
+                case 'Replace':
+                    advancePlaylist(videoId);
+                    break;
+                case 'Favorite':
+                    showNotification(`Added to favorites: ${videoData?.name || videoId}`, 'success');
+                    break;
+            }
+        }
+
+        function cycleQuality(tile) {
+            const btn = document.querySelector('#globalMenuBtn .radial-btn[title="Quality"]');
+            const states = ['low', 'medium', 'high'];
+            let current = states.findIndex(s => tile.classList.contains(`quality-${s}`));
+            
+            states.forEach(s => tile.classList.remove(`quality-${s}`));
+            const next = (current + 1) % states.length;
+            tile.classList.add(`quality-${next === 0 ? 'low' : next === 1 ? 'medium' : 'high'}`);
+            
+            showNotification(`Quality set to ${states[next].toUpperCase()}`);
+        }
+
+        function toggleFullscreen() {
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen().catch(e => {
+                    showNotification(`Error: ${e.message}`, 'danger');
+                });
+                document.body.classList.add('fullscreen-mode');
+                document.querySelector('.controls').classList.add('fs-hidden');
+                isFullscreen = true;
+            } else {
+                if (document.exitFullscreen) {
+                    document.exitFullscreen();
+                    document.body.classList.remove('fullscreen-mode');
+                    document.querySelector('.controls').classList.remove('fs-hidden', 'fs-reveal');
+                    isFullscreen = false;
+                }
+            }
+        }
+
+        // --- Integrated Logic into Existing Functions ---
+        // Refresh slot tagging on layout changes
+        const originalUpdateGridLayout = updateGridLayout;
+        updateGridLayout = function() {
+            originalUpdateGridLayout();
+            setTimeout(refreshSlotDataAttributes, 100);
+        };
+
+        // Initialize v3 on load
+        window.addEventListener('DOMContentLoaded', initV3UI);
+        
+        async function addFromInputSmart() {
+            const input = document.getElementById('urlInput');
+            const raw = input.value.trim();
+            if (!raw) return;
+
+            if (isLikelyPlaylistImportUrl(raw)) {
+                // If it looks like a playlist, use the Bulk/Extractor logic
+                document.getElementById('bulkUrlInput').value = raw;
+                toggleBulkModule();
+                extractBulkLinks();
+            } else {
+                // Direct video
+                await addVideoWithResolution(raw);
+            }
+            input.value = '';
+        }
+
+        function isLikelyPlaylistImportUrl(url) {
+            const u = url.toLowerCase();
+            return u.includes('pmvhaven.com/playlist/') || u.includes('pornhub.com/playlist/');
+        }
+
+        function toggleGlobalMuteMode() {
+            const btn = document.getElementById('globalMuteToggle');
+            const isMuted = btn.getAttribute('aria-pressed') === 'true';
+            const newState = !isMuted;
+            
+            btn.setAttribute('aria-pressed', newState.toString());
+            btn.textContent = `Global Mute: ${newState ? 'ON' : 'OFF'}`;
+            btn.style.background = newState ? '#d35400' : '#27ae60';
+            
+            document.querySelectorAll('video').forEach(v => {
+                v.muted = newState;
+            });
+        }
     </script>
 </body>
 </html>

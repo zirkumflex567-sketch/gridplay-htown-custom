@@ -33,10 +33,21 @@
             gap: 15px;
             align-items: center;
             box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+            transition: transform 0.25s ease, opacity 0.25s ease;
+            transform: translateY(0);
+            opacity: 1;
+            position: relative;
+            z-index: 1200;
         }
 
         .controls.hidden {
             display: none;
+        }
+
+        .fullscreen-mode .controls.fs-hidden {
+            transform: translateY(calc(-100% - 10px));
+            opacity: 0;
+            pointer-events: none;
         }
 
         .url-input {
@@ -474,14 +485,27 @@
         .controls-toggle:hover {
             background: rgba(0, 0, 0, 0.8);
         }
+
+        .fs-reveal-zone {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 24px;
+            z-index: 1150;
+            display: none;
+        }
+
+        .fullscreen-mode .fs-reveal-zone {
+            display: block;
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="controls">
             <input type="text" class="url-input" placeholder="Paste or drag video URLs here (YouTube, Vimeo, PMVHaven, direct video links)" id="urlInput">
-            <button class="btn" onclick="addVideoFromUrl()">Add Video</button>
-            <button class="btn" onclick="addPlaylistFromInput()">Add Playlist</button>
+            <button class="btn" onclick="addFromInputSmart()">Add</button>
             <select id="slotSelect" class="slot-select" title="Target tile for playlist">
                 <option value="">New Tile</option>
             </select>
@@ -698,7 +722,8 @@
 
         <div class="video-grid" id="videoGrid"></div>
     </div>
-    <button class="controls-toggle" id="controlsToggle" title="Hide controls">▴</button>
+    <div class="fs-reveal-zone" id="fullscreenRevealZone" aria-hidden="true"></div>
+    <button class="controls-toggle" id="controlsToggle" title="Enter fullscreen" aria-label="Enter fullscreen">&#x26F6;</button>
 
     <script>
         let videos = [];
@@ -888,9 +913,13 @@
         const fileInput = document.getElementById('fileInput');
         const controls = document.querySelector('.controls');
         const controlsToggle = document.getElementById('controlsToggle');
+        const fullscreenRevealZone = document.getElementById('fullscreenRevealZone');
         const slotSelect = document.getElementById('slotSelect');
         const pawgTargetSlot = document.getElementById('pawgTargetSlot');
         const globalMuteToggle = document.getElementById('globalMuteToggle');
+        const FULLSCREEN_TOP_REVEAL_PX = 16;
+        const FULLSCREEN_HIDE_DELAY_MS = 900;
+        let fullscreenHideTimer = null;
 
         const audioPolicyObserver = new MutationObserver(() => {
             if (isApplyingAudioPolicy) {
@@ -1788,6 +1817,24 @@
             showNotification(`Playlist queued in selected tile (${urls.length} links)`);
         }
 
+        async function addFromInputSmart() {
+            const raw = urlInput.value.trim();
+            const urls = parseLinkList(raw);
+
+            if (urls.length === 0) {
+                showNotification('No valid URLs found', 'warning');
+                return;
+            }
+
+            if (urls.length === 1) {
+                await addVideoWithResolution(urls[0]);
+                urlInput.value = '';
+                return;
+            }
+
+            await addPlaylistFromInput();
+        }
+
         function handleEmbedError(videoId) {
             const iframe = document.querySelector(`#${videoId} iframe`);
             const errorDiv = document.getElementById(`error-${videoId}`);
@@ -1857,6 +1904,87 @@
             if (url) {
                 await addVideoWithResolution(url);
                 urlInput.value = '';
+            }
+        }
+
+        function isFullscreenActive() {
+            return Boolean(document.fullscreenElement);
+        }
+
+        function clearFullscreenHideTimer() {
+            if (!fullscreenHideTimer) {
+                return;
+            }
+            clearTimeout(fullscreenHideTimer);
+            fullscreenHideTimer = null;
+        }
+
+        function setFullscreenControlsVisible(visible) {
+            if (!isFullscreenActive()) {
+                controls.classList.remove('fs-hidden');
+                return;
+            }
+            controls.classList.toggle('fs-hidden', !visible);
+        }
+
+        function hideFullscreenControlsNow() {
+            clearFullscreenHideTimer();
+            setFullscreenControlsVisible(false);
+        }
+
+        function scheduleFullscreenControlsHide() {
+            if (!isFullscreenActive()) {
+                return;
+            }
+
+            clearFullscreenHideTimer();
+            fullscreenHideTimer = setTimeout(() => {
+                const controlsHovered = controls.matches(':hover');
+                const revealHovered = fullscreenRevealZone.matches(':hover');
+                if (!controlsHovered && !revealHovered) {
+                    setFullscreenControlsVisible(false);
+                }
+            }, FULLSCREEN_HIDE_DELAY_MS);
+        }
+
+        function revealFullscreenControls() {
+            if (!isFullscreenActive()) {
+                return;
+            }
+
+            setFullscreenControlsVisible(true);
+            scheduleFullscreenControlsHide();
+        }
+
+        async function toggleFullscreenMode() {
+            try {
+                if (isFullscreenActive()) {
+                    await document.exitFullscreen();
+                } else {
+                    await document.documentElement.requestFullscreen();
+                }
+            } catch (_) {
+                showNotification('Fullscreen is not available on this device/browser', 'warning');
+            }
+        }
+
+        function syncFullscreenUiState() {
+            const active = isFullscreenActive();
+            document.body.classList.toggle('fullscreen-mode', active);
+            controls.classList.remove('hidden');
+
+            if (active) {
+                controlsToggle.textContent = '\u21f2';
+                controlsToggle.title = 'Exit fullscreen';
+                controlsToggle.setAttribute('aria-label', 'Exit fullscreen');
+                setFullscreenControlsVisible(true);
+                scheduleFullscreenControlsHide();
+            } else {
+                clearFullscreenHideTimer();
+                controls.classList.remove('fs-hidden');
+                controlsToggle.textContent = '\u26F6';
+                controlsToggle.title = 'Enter fullscreen';
+                controlsToggle.setAttribute('aria-label', 'Enter fullscreen');
             }
         }
 
@@ -1973,26 +2101,14 @@
         // Handle Enter key in URL input
         urlInput.addEventListener('keypress', function(e) {
             if (e.key === 'Enter') {
-                const urls = parseLinkList(urlInput.value.trim());
-                if (urls.length > 1) {
-                    addPlaylistFromInput();
-                } else {
-                    addVideoFromUrl();
-                }
+                addFromInputSmart();
             }
         });
 
         // Handle paste in URL input
         urlInput.addEventListener('paste', function(e) {
             setTimeout(async () => {
-                const raw = e.target.value.trim();
-                const urls = parseLinkList(raw);
-                if (urls.length > 1) {
-                    await addPlaylistFromInput();
-                } else if (urls.length === 1) {
-                    await addVideoWithResolution(urls[0]);
-                    e.target.value = '';
-                }
+                await addFromInputSmart();
             }, 100);
         });
 
@@ -2000,15 +2116,58 @@
             setSelectedSlot(e.target.value);
         });
 
-        controlsToggle.addEventListener('click', function() {
-            const hidden = controls.classList.toggle('hidden');
-            controlsToggle.textContent = hidden ? '▾' : '▴';
-            controlsToggle.title = hidden ? 'Show controls' : 'Hide controls';
+        controlsToggle.addEventListener('click', toggleFullscreenMode);
+
+        controls.addEventListener('pointerenter', function() {
+            if (!isFullscreenActive()) {
+                return;
+            }
+            setFullscreenControlsVisible(true);
+            clearFullscreenHideTimer();
         });
+
+        controls.addEventListener('pointerleave', function() {
+            if (!isFullscreenActive()) {
+                return;
+            }
+            hideFullscreenControlsNow();
+        });
+
+        fullscreenRevealZone.addEventListener('pointerenter', revealFullscreenControls);
+        fullscreenRevealZone.addEventListener('pointermove', revealFullscreenControls);
+        fullscreenRevealZone.addEventListener('pointerleave', function() {
+            if (!isFullscreenActive()) {
+                return;
+            }
+            hideFullscreenControlsNow();
+        });
+
+        document.addEventListener('pointermove', function(e) {
+            if (!isFullscreenActive()) {
+                return;
+            }
+            if (typeof e.clientY === 'number' && e.clientY <= FULLSCREEN_TOP_REVEAL_PX) {
+                revealFullscreenControls();
+            }
+        });
+
+        document.addEventListener('touchstart', function(e) {
+            if (!isFullscreenActive()) {
+                return;
+            }
+            const touch = e.touches && e.touches[0];
+            if (touch && touch.clientY <= (FULLSCREEN_TOP_REVEAL_PX * 3)) {
+                revealFullscreenControls();
+            }
+        }, { passive: true });
+
+        document.addEventListener('fullscreenchange', syncFullscreenUiState);
+        document.addEventListener('fullscreenerror', syncFullscreenUiState);
 
         updateGlobalMuteToggle();
         applyGlobalAudioPolicy();
         refreshSlotOptions();
+        syncFullscreenUiState();
 
         // Playlist Module Functions
         function togglePlaylistModule() {

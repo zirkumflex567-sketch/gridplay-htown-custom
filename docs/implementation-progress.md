@@ -49,3 +49,25 @@
 
 - Right-click audio switching is an interim Wave 2 interaction; radial menu UX is intentionally not included in this wave.
 - There is still no browser automation harness for `v2/index.html`; validation remains manual for this wave.
+
+## Wave 3 (V2 fullscreen controls + smart add action)
+
+- **Timestamp:** 2026-04-09T15:43:16+02:00
+- **Scope:** Repurpose the top-right toggle as a fullscreen control, add fullscreen-only topbar auto-hide/reveal behavior, and merge Add Video/Add Playlist into one smart Add action while preserving existing add functions.
+- **Files changed:**
+  - `v2/index.html`
+  - `docs/implementation-progress.md`
+
+## Verification Steps (manual)
+
+- Click top-right fullscreen button to enter/exit fullscreen and confirm button icon/title switch between enter/exit states.
+- In fullscreen, confirm top controls auto-hide after a short delay and slide back when moving pointer to the top edge or hovering the reveal strip.
+- In fullscreen, confirm controls hide again when leaving top edge/controls area.
+- Outside fullscreen, confirm controls remain visible and no auto-hide behavior occurs.
+- Paste one valid URL and click `Add` to confirm a single tile is added.
+- Paste multiple valid URLs and click `Add` to confirm playlist queue behavior still targets selected/new tile as before.
+
+## Known Limitations
+
+- Fullscreen behavior depends on browser Fullscreen API support and may require user gesture on some mobile browsers.
+- Validation for `v2/index.html` remains manual aside from static syntax check of extracted inline script.

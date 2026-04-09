@@ -476,9 +476,18 @@
                     <button class="close-btn" onclick="toggleGlobalPlaylistModule()">×</button>
                 </div>
                 <div class="module-content">
-                    <p style="font-size: 12px; color: #888; margin-bottom: 10px;">Paste direct video links. The grid will auto-load new videos as others finish, looping infinitely.</p>
-                    <textarea id="globalPlaylistInput" placeholder="Paste direct video links (one per line)..." class="module-input" style="height: 120px;"></textarea>
+                    <p id="globalPlaylistStats" style="font-size: 13px; color: #00bcd4; margin-bottom: 8px; font-weight: 500;">Playlist is currently empty.</p>
+                    <p style="font-size: 12px; color: #888; margin-bottom: 10px;">Full Queue (Edit to re-arrange or remove):</p>
+                    <textarea id="globalPlaylistInput" placeholder="Paste direct video links (one per line)..." class="module-input" style="height: 120px; margin-bottom: 15px;"></textarea>
                     
+                    <div style="margin-bottom: 20px; padding: 15px; background: rgba(255,255,255,0.03); border-radius: 10px;">
+                        <label style="font-size: 13px; color: #ccc; display: block; margin-bottom: 8px;">Quick Append (Add more links):</label>
+                        <div style="display: flex; gap: 8px;">
+                            <input type="text" id="globalQuickAppend" placeholder="Paste link(s)..." class="module-input" style="margin-bottom: 0; flex: 1;">
+                            <button class="btn" onclick="appendGlobalPlaylistLinks()" style="background: #00bcd4;">Add</button>
+                        </div>
+                    </div>
+
                     <div style="margin-bottom: 20px;">
                         <label style="font-size: 14px; color: #ccc; display: block; margin-bottom: 8px;">Simultaneous Videos (Grid Slots):</label>
                         <input type="number" id="globalSimultaneousCount" value="4" min="1" max="16" class="module-input" style="margin-bottom: 0;">
@@ -1328,6 +1337,10 @@
                 if (videos.length === 0) {
                     showDropZone();
                 }
+
+                if (isGlobalPlaylistActive) {
+                    checkGlobalPlaylistFill();
+                }
             }
         }
 
@@ -1641,12 +1654,25 @@
         function toggleGlobalPlaylistModule() {
             const module = document.getElementById('globalPlaylistModule');
             const overlay = document.getElementById('modalOverlay');
+            const input = document.getElementById('globalPlaylistInput');
             const isVisible = module.style.display === 'block';
             
             closeAllModules();
             if (!isVisible) {
+                // Pre-populate if active
+                if (isGlobalPlaylistActive && globalPlaylistLinks.length > 0) {
+                    input.value = globalPlaylistLinks.join('\n');
+                    updateGlobalPlaylistStats();
+                }
                 module.style.display = 'block';
                 overlay.style.display = 'block';
+            }
+        }
+
+        function updateGlobalPlaylistStats() {
+            const stats = document.getElementById('globalPlaylistStats');
+            if (stats && globalPlaylistLinks.length > 0) {
+                stats.textContent = `Queue: ${globalPlaylistLinks.length} videos | Current Index: ${globalPlaylistIndex % globalPlaylistLinks.length + 1}`;
             }
         }
 
@@ -1851,8 +1877,8 @@
             // We use the standard robust pathway for every link
             for (const link of bulkExtractedLinks) {
                 await addVideoWithResolution(link);
-                // Slight delay to avoid hammering the resolve API too fast
-                await new Promise(r => setTimeout(r, 300));
+                // Respectful delay to give HLS engine time to initialize and avoid proxy congestion
+                await new Promise(r => setTimeout(r, 500));
             }
             
             toggleBulkModule();
@@ -1862,6 +1888,19 @@
         let isGlobalPlaylistActive = false;
         let globalPlaylistLinks = [];
         let globalPlaylistIndex = 0;
+        let globalPlaylistTargetCount = 0;
+
+        async function checkGlobalPlaylistFill() {
+            if (!isGlobalPlaylistActive || globalPlaylistLinks.length === 0) return;
+            
+            while (videos.length < globalPlaylistTargetCount) {
+                const link = globalPlaylistLinks[globalPlaylistIndex % globalPlaylistLinks.length];
+                globalPlaylistIndex++;
+                await addVideoWithResolution(link);
+                // Slight delay to avoid sudden layout jumps
+                await new Promise(r => setTimeout(r, 400));
+            }
+        }
 
         async function startGlobalPlaylist() {
             const input = document.getElementById('globalPlaylistInput');
@@ -1881,19 +1920,14 @@
             isGlobalPlaylistActive = true;
             globalPlaylistLinks = links;
             globalPlaylistIndex = 0;
+            globalPlaylistTargetCount = simultaneousCount;
 
             // Clear grid
             clearAll();
             showNotification(`Starting Global Playlist with ${simultaneousCount} slots...`);
 
             // Initialize Slots
-            for (let i = 0; i < simultaneousCount; i++) {
-                const link = globalPlaylistLinks[globalPlaylistIndex % globalPlaylistLinks.length];
-                globalPlaylistIndex++;
-                await addVideoWithResolution(link);
-                // Respectful delay between initial loads
-                await new Promise(r => setTimeout(r, 800));
-            }
+            await checkGlobalPlaylistFill();
 
             // Update UI to show management mode
             document.getElementById('globalStartBtn').style.display = 'none';
@@ -1906,6 +1940,7 @@
 
         function updateGlobalPlaylist() {
             const input = document.getElementById('globalPlaylistInput');
+            const countInput = document.getElementById('globalSimultaneousCount');
             const rawText = input.value.trim();
             const links = rawText.split(/[\n,\s]+/).map(l => l.trim()).filter(l => l && isValidUrl(l));
             
@@ -1915,8 +1950,41 @@
             }
 
             globalPlaylistLinks = links;
-            showNotification(`Global Playlist updated! (${links.length} links)`, 'info');
+            globalPlaylistTargetCount = parseInt(countInput.value) || globalPlaylistTargetCount;
+            
+            showNotification(`Global Playlist updated! Scaling to ${globalPlaylistTargetCount} slots...`, 'info');
+            updateGlobalPlaylistStats();
+            checkGlobalPlaylistFill();
             toggleGlobalPlaylistModule();
+        }
+
+        function appendGlobalPlaylistLinks() {
+            const quickInput = document.getElementById('globalQuickAppend');
+            const textarea = document.getElementById('globalPlaylistInput');
+            const raw = quickInput.value.trim();
+            const newLinks = raw.split(/[\n,\s]+/).map(l => l.trim()).filter(l => l && isValidUrl(l));
+            
+            if (newLinks.length === 0) {
+                showNotification('Please enter at least one valid link', 'warning');
+                return;
+            }
+
+            // Append to internal list
+            globalPlaylistLinks = [...globalPlaylistLinks, ...newLinks];
+            
+            // Sync UI textarea if it's open
+            if (textarea.value.trim()) {
+                textarea.value += '\n' + newLinks.join('\n');
+            } else {
+                textarea.value = newLinks.join('\n');
+            }
+            
+            quickInput.value = '';
+            showNotification(`Added ${newLinks.length} videos to queue! Total: ${globalPlaylistLinks.length}`, 'success');
+            updateGlobalPlaylistStats();
+            
+            // If we weren't active before, maybe we should start? No, let the user hit Start.
+            // But if we ARE active, the loop will naturally pick them up.
         }
 
         function stopGlobalPlaylist() {

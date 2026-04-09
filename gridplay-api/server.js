@@ -846,7 +846,10 @@ async function handleStream(req, reqUrl, res) {
     try {
         const upstreamHost = mediaUrl.hostname.toLowerCase();
         const headers = {
-            'User-Agent': 'GridPlayProxy/1.0 (+https://h-town.duckdns.org/gridplay/)'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+            'Referer': 'https://pmvhaven.com/',
+            'Accept': '*/*',
+            'Origin': 'https://pmvhaven.com'
         };
         if (MEDIA_HOSTS.has(upstreamHost)) {
             headers.Referer = 'https://pmvhaven.com/';
@@ -888,26 +891,41 @@ async function handleStream(req, reqUrl, res) {
 
         responseHeaders['X-GridPlay-Proxy'] = 'pmvhaven';
 
-        const contentType = upstream.headers.get('content-type') || '';
-        const mediaUrlText = mediaUrl.toString();
-        const isM3u8 = contentType.includes('mpegurl') || mediaUrlText.includes('.m3u8');
+        const contentType = (upstream.headers.get('content-type') || '').toLowerCase();
+        const mediaUrlStr = mediaUrl.toString().toLowerCase();
+        const isM3u8 = contentType.includes('mpegurl') || contentType.includes('m3u8') || mediaUrlStr.includes('.m3u8');
 
         if (isM3u8 && req.method !== 'HEAD' && upstream.body) {
             const body = await upstream.text();
+            
+            // 1. Rewrite absolute/relative URIs on standalone lines
+            // 2. Rewrite URIs inside tags like URI="path/to/segment"
             const lines = body.split('\n');
             const rewrittenLines = lines.map(line => {
                 const trimmed = line.trim();
-                // A line in M3U8 that doesn't start with # and isn't empty is a URI
-                if (trimmed && !trimmed.startsWith('#')) {
-                    try {
-                        const absoluteUrl = new URL(trimmed, mediaUrlText).toString();
-                        return `/gridplay-api/stream?url=${encodeURIComponent(absoluteUrl)}`;
-                    } catch (e) {
-                        return line;
-                    }
+                if (!trimmed) return line;
+
+                // Handle tags with URI attributes: e.g. #EXT-X-MAP:URI="init.mp4"
+                if (trimmed.startsWith('#')) {
+                    return line.replace(/URI="([^"]+)"/g, (match, p1) => {
+                        try {
+                            const abs = new URL(p1, mediaUrl).toString();
+                            return `URI="/gridplay-api/stream?url=${encodeURIComponent(abs)}"`;
+                        } catch (e) {
+                            return match;
+                        }
+                    });
                 }
-                return line;
+
+                // A line in M3U8 that doesn't start with # and isn't empty is a URI.
+                try {
+                    const absoluteUrl = new URL(trimmed, mediaUrl).toString();
+                    return `/gridplay-api/stream?url=${encodeURIComponent(absoluteUrl)}`;
+                } catch (e) {
+                    return line;
+                }
             });
+
             const rewrittenBody = rewrittenLines.join('\n');
             const buf = Buffer.from(rewrittenBody, 'utf8');
             

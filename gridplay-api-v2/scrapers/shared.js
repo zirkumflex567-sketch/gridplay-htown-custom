@@ -35,6 +35,31 @@ function parseRatingPercent(input = '') {
   return Math.max(0, Math.min(100, n));
 }
 
+function parseDuration(input = '') {
+  if (!input) return 0;
+  const clean = normalizeWhitespace(input).toLowerCase();
+  
+  // Format MM:SS, H:MM:SS
+  const hms = clean.match(/(?:(\d+):)?(\d+):(\d+)/);
+  if (hms) {
+    const h = parseInt(hms[1] || 0, 10);
+    const m = parseInt(hms[2] || 0, 10);
+    const s = parseInt(hms[3] || 0, 10);
+    return (h * 3600) + (m * 60) + s;
+  }
+
+  // Format "3 min", "12 sec", "1h 5m"
+  let total = 0;
+  const hMatch = clean.match(/(\d+)\s*h/);
+  const mMatch = clean.match(/(\d+)\s*m/);
+  const sMatch = clean.match(/(\d+)\s*s/);
+  if (hMatch) total += parseInt(hMatch[1], 10) * 3600;
+  if (mMatch) total += parseInt(mMatch[1], 10) * 60;
+  if (sMatch) total += parseInt(sMatch[1], 10);
+  
+  return total;
+}
+
 function makeAbsolute(base, href) {
   try {
     return new URL(href, base).toString();
@@ -43,10 +68,24 @@ function makeAbsolute(base, href) {
   }
 }
 
-function scoreVideo(video, minViews, minRating) {
+function scoreVideo(video, minViews, minRating, minDuration = 0) {
   const views = Number(video.views || 0);
   const rating = Number(video.rating || 0);
-  return views >= minViews && rating >= minRating ? rating * 100000 + views : -1;
+  const duration = Number(video.duration || 0);
+  
+  if (views < minViews || rating < minRating || duration < minDuration) return -1;
+  return rating * 100000 + views;
 }
 
-module.exports = { htmlDecode, normalizeWhitespace, parseViews, parseRatingPercent, makeAbsolute, scoreVideo };
+const MIN_VIDEO_DURATION = 60;
+
+module.exports = { 
+  htmlDecode, 
+  normalizeWhitespace, 
+  parseViews, 
+  parseRatingPercent, 
+  parseDuration, 
+  makeAbsolute, 
+  scoreVideo,
+  MIN_VIDEO_DURATION 
+};

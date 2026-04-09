@@ -1,0 +1,25 @@
+{
+  "testUrls": [
+    { "url": "https://www.pornhub.com/video/123456/test-video", "expectedKind": "video", "expectedProvider": "pornhub" },
+    { "url": "https://www.pornhub.com/users/testuser", "expectedKind": "profile", "expectedProvider": "pornhub" },
+    { "url": "https://www.pornhub.com/search?search=test", "expectedKind": "search", "expectedProvider": "pornhub" },
+    { "url": "https://www.pornhub.com/playlist/abc123", "expectedKind": "playlist", "expectedProvider": "pornhub" },
+    { "url": "https://www.xvideos.com/video123456/test", "expectedKind": "video", "expectedProvider": "xvideos" },
+    { "url": "https://www.xvideos.com/profile/testuser", "expectedKind": "profile", "expectedProvider": "xvideos" },
+    { "url": "https://www.xvideos.com/?k=test", "expectedKind": "search", "expectedProvider": "xvideos" },
+    { "url": "https://www.xhamster.com/video/123456/test", "expectedKind": "video", "expectedProvider": "xhamster" },
+    { "url": "https://www.xhamster.com/users/testuser", "expectedKind": "profile", "expectedProvider": "xhamster" },
+    { "url": "https://www.xhamster.com/videos?q=test", "expectedKind": "search", "expectedProvider": "xhamster" },
+    { "url": "https://www.xnxx.com/video-abc123/test", "expectedKind": "video", "expectedProvider": "xnxx" },
+    { "url": "https://www.xnxx.com/?k=test", "expectedKind": "search", "expectedProvider": "xnxx" },
+    { "url": "https://www.youporn.com/watch/123456", "expectedKind": "video", "expectedProvider": "youporn" },
+    { "url": "https://www.youporn.com/search/search=test", "expectedKind": "search", "expectedProvider": "youporn" },
+    { "url": "https://www.eporner.com/video/abc123", "expectedKind": "video", "expectedProvider": "eporner" },
+    { "url": "https://www.tnaflix.com/video/abc123", "expectedKind": "video", "expectedProvider": "tnaflix" },
+    { "url": "https://www.spankbang.com/abc123/video/", "expectedKind": "video", "expectedProvider": "spankbang" },
+    { "url": "https://pmvhaven.com/video/abc123", "expectedKind": "video", "expectedProvider": "pmvhaven" },
+    { "url": "https://pmvhaven.com/playlist/abc123", "expectedKind": "playlist", "expectedProvider": "pmvhaven" },
+    { "url": "https://unknown-site.com/video/123", "expectedKind": "video", "expectedProvider": null },
+    { "url": "https://example.com/page", "expectedKind": "unknown", "expectedProvider": null }
+  ]
+}

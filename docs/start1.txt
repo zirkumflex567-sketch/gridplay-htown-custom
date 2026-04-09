@@ -1,0 +1,28 @@
+Ich habe die Scraper-Delegation vorbereitet und direkt im Repo abgelegt, ohne App-Code anzufassen.
+
+Neuer Agent-Prompt: docs/provider-scraper-agent-prompt.md
+Neues Standalone-Blueprint-Dokument: docs/provider-scraper-integration-blueprint.md
+Beide Dateien sind auf Deutsch, ASCII-only, und auf eure aktuelle Struktur (gridplay-api, gridplay-api-v2, docs/provider.txt) abgestimmt.
+Der Prompt enthält exakt die Anforderungen fuer den zweiten Agenten: pluggable Provider-Module, URL-Klassifikation (video|playlist|profile|search|unknown), Resolver/Fallback/Retry, PMVHaven-No-Regression, Tests + Reportpflicht.
+Das Blueprint-Dokument enthaelt zusaetzlich die komplette Tier-1/2/3-Zuordnung aller Domains aus docs/provider.txt, Zielarchitektur, Dateibaum, Testdateien, Rollout-Waves fuer 2 Agenten, Logging/video_errors, DoD.
+Kompakter Prompt-Kern (die vollstaendige Copy-Paste-Version steht in docs/provider-scraper-agent-prompt.md):
+
+Implementiere in gridplay-api-v2 eine erweiterbare Provider-Architektur:
+- Provider-Registry (Domain -> Provider-Modul)
+- URL-Klassifikation: video|playlist|profile|search|unknown
+- Resolver-Chain: provider-specific -> generic html extraction -> embed fallback -> unknown fallback
+- Ingest-Logik klar trennen: single video vs playlist vs profile/search
+- PMVHaven-Staerken aus gridplay-api/server.js erhalten (no regression)
+- Bestehende Endpunkte nicht brechen, v1/v2 rueckwaertskompatibel halten
+- Tests erweitern (unit, fixture, integration, smoke), lokal ausfuehren und Ergebnisse dokumentieren
+- Abschlussreport liefern: geaenderte Dateien, Testevidenz, Provider-Status (done|partial|blocked), offene Risiken
+Akzeptanz:
+- reproduzierbarer Provider-Onboarding-Workflow
+- >=95% Classifier-Treffer auf Fixture-Set
+- PMVHaven-Flows weiterhin gruen
+- keine API-Breaking-Changes
+Naechste sinnvolle Ausfuehrung:
+
+Prompt aus docs/provider-scraper-agent-prompt.md 1:1 in den zweiten KI-Agenten geben.
+Umsetzung in eigener Branch laufen lassen, mit Fokus zuerst Tier 1 aus dem Blueprint.
+Danach mergebare Teilwellen nach dem Wave-Plan in docs/provider-scraper-integration-blueprint.md ausrollen.

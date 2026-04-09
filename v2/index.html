@@ -6,6 +6,7 @@
     <title>Multi-Video Grid Player</title>
     <!-- HLS.js for M3U8 support -->
     <script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>
+    <link rel="stylesheet" href="playlist-editor.css">
     <style>
         * {
             margin: 0;
@@ -629,6 +630,7 @@
                 <button class="btn" onclick="togglePawgMixModule()" style="background: #8e44ad;">Generate PAWG Mix</button>
                 <button class="btn" onclick="toggleSearchPlaylistModule()" style="background: #1abc9c;">Search Playlist v2</button>
                 <button class="btn" onclick="toggleGlobalPlaylistModule()" style="background: #e67e22;">Global Playlist</button>
+                <button class="btn" id="playlistEditorOpenBtn" onclick="openPlaylistEditorForCurrentContext()" style="background: #2c7a7b;">Playlist Editor</button>
                 <button class="btn" id="globalMuteToggle" onclick="toggleGlobalMuteMode()" aria-pressed="false">Global Mute: OFF</button>
                 <button class="btn" onclick="saveConfig()">Save Config</button>
                 <button class="btn" onclick="loadConfig()">Load Config</button>
@@ -837,6 +839,7 @@
     <div class="fs-reveal-zone" id="fullscreenRevealZone" aria-hidden="true"></div>
     <button class="controls-toggle" id="controlsToggle" title="Enter fullscreen" aria-label="Enter fullscreen">&#x26F6;</button>
 
+    <script src="playlist-editor.js"></script>
     <script>
         let videos = [];
         let videoCounter = 0;
@@ -858,6 +861,7 @@
         const tileMenuStates = new Map();
         const tileMenuHintTimers = new Map();
         let openTileMenuId = '';
+        let playlistEditorContext = null;
 
         function clampNumber(value, min, max) {
             return Math.min(max, Math.max(min, value));
@@ -1575,6 +1579,223 @@
             if (playlist.queue.length === 0 && playlist.loop && playlist.baseQueue.length > 0) {
                 playlist.queue = playlist.baseQueue.map(item => ({ ...item }));
             }
+        }
+
+        function runtimeQueueEntryToEditorItem(entry, fallbackTitle = null) {
+            const normalized = toQueueEntry(entry);
+            if (!normalized) {
+                return null;
+            }
+
+            return {
+                url: normalized.src,
+                title: normalized.title || fallbackTitle || normalized.src,
+                source: 'Runtime',
+                views: 0,
+                rating: 0
+            };
+        }
+
+        function editorItemToRuntimeQueueEntry(item) {
+            if (!item || typeof item !== 'object') {
+                return null;
+            }
+
+            const src = typeof item.url === 'string'
+                ? item.url.trim()
+                : typeof item.src === 'string'
+                    ? item.src.trim()
+                    : '';
+
+            if (!src || !isValidUrl(src)) {
+                return null;
+            }
+
+            return {
+                src,
+                title: typeof item.title === 'string' && item.title.trim().length > 0
+                    ? item.title.trim()
+                    : null,
+                durationSeconds: null
+            };
+        }
+
+        function buildSlotEditorQueue(videoId) {
+            const tileEntry = getTileEntry(videoId);
+            if (!tileEntry) {
+                return [];
+            }
+
+            const combined = [];
+            const current = runtimeQueueEntryToEditorItem({
+                src: tileEntry.src,
+                title: tileEntry.name || null
+            });
+            if (current) {
+                combined.push(current);
+            }
+
+            const playlist = slotPlaylists.get(videoId);
+            if (playlist && Array.isArray(playlist.queue)) {
+                playlist.queue.forEach(item => {
+                    const mapped = runtimeQueueEntryToEditorItem(item);
+                    if (mapped) {
+                        combined.push(mapped);
+                    }
+                });
+            }
+
+            return combined;
+        }
+
+        function buildGlobalEditorQueue() {
+            if (!Array.isArray(globalPlaylistLinks) || globalPlaylistLinks.length === 0) {
+                return [];
+            }
+
+            const length = globalPlaylistLinks.length;
+            const normalizedIndex = ((globalPlaylistIndex % length) + length) % length;
+            const rotated = globalPlaylistLinks
+                .slice(normalizedIndex)
+                .concat(globalPlaylistLinks.slice(0, normalizedIndex));
+
+            return rotated
+                .map(src => runtimeQueueEntryToEditorItem({ src }))
+                .filter(Boolean);
+        }
+
+        function getGlobalPlaylistToggleButton() {
+            return document.querySelector('button[onclick="toggleGlobalPlaylistModule()"]');
+        }
+
+        function updateGlobalPlaylistButtonState() {
+            const button = getGlobalPlaylistToggleButton();
+            if (!button) {
+                return;
+            }
+
+            if (isGlobalPlaylistActive) {
+                button.style.background = '#d35400';
+                button.textContent = 'Global Playlist (Active)';
+                return;
+            }
+
+            button.style.background = '#e67e22';
+            button.textContent = 'Global Playlist';
+        }
+
+        async function applyPlaylistEditorQueueToRuntime(editorQueue) {
+            const context = playlistEditorContext;
+            if (!context) {
+                return;
+            }
+
+            const normalizedQueue = (Array.isArray(editorQueue) ? editorQueue : [])
+                .map(editorItemToRuntimeQueueEntry)
+                .filter(Boolean);
+
+            if (context.mode === 'global') {
+                globalPlaylistLinks = normalizedQueue.map(item => item.src);
+                globalPlaylistIndex = 0;
+                document.getElementById('globalPlaylistInput').value = globalPlaylistLinks.join('\n');
+                updateGlobalPlaylistStats();
+
+                if (globalPlaylistLinks.length === 0) {
+                    isGlobalPlaylistActive = false;
+                    document.getElementById('globalStartBtn').style.display = 'inline-block';
+                    document.getElementById('globalUpdateBtn').style.display = 'none';
+                    updateGlobalPlaylistButtonState();
+                    showNotification('Global Playlist queue cleared from editor', 'info');
+                    return;
+                }
+
+                if (isGlobalPlaylistActive) {
+                    checkGlobalPlaylistFill();
+                }
+                return;
+            }
+
+            if (context.mode !== 'slot' || !context.slotId) {
+                return;
+            }
+
+            const slotId = context.slotId;
+            if (!getTileEntry(slotId)) {
+                showNotification('Selected slot is no longer available', 'warning');
+                return;
+            }
+
+            if (normalizedQueue.length === 0) {
+                slotPlaylists.delete(slotId);
+                return;
+            }
+
+            const currentItem = normalizedQueue[0];
+            const upcomingItems = normalizedQueue.slice(1);
+            const existingLoop = slotPlaylists.get(slotId)?.loop === true;
+            const tileEntry = getTileEntry(slotId);
+
+            if (!tileEntry || tileEntry.src !== currentItem.src) {
+                const loaded = await loadSourceIntoSlot(slotId, currentItem.src, currentItem.title, {
+                    forceHtml5: true,
+                    __suppressNotification: true
+                });
+                if (!loaded) {
+                    showNotification('Failed to load selected first item from editor queue', 'warning');
+                    return;
+                }
+            } else if (currentItem.title) {
+                const index = videos.findIndex(video => video.id === slotId);
+                if (index !== -1) {
+                    videos[index].name = currentItem.title;
+                }
+            }
+
+            setSlotPlaylist(slotId, upcomingItems, existingLoop);
+        }
+
+        function openPlaylistEditorForCurrentContext() {
+            if (!window.PlaylistEditor) {
+                showNotification('Playlist Editor is not available', 'warning');
+                return;
+            }
+
+            if (isGlobalPlaylistActive) {
+                playlistEditorContext = { mode: 'global' };
+                const queue = buildGlobalEditorQueue();
+                window.PlaylistEditor.setQueue(queue, 0);
+                window.PlaylistEditor.toggleStatus(queue.length > 0);
+                window.PlaylistEditor.toggleEditor(true);
+                return;
+            }
+
+            if (!selectedSlotId) {
+                showNotification('Select a tile or activate Global Playlist first', 'warning');
+                return;
+            }
+
+            if (!getTileEntry(selectedSlotId)) {
+                showNotification('Selected tile is no longer available', 'warning');
+                return;
+            }
+
+            playlistEditorContext = { mode: 'slot', slotId: selectedSlotId };
+            const queue = buildSlotEditorQueue(selectedSlotId);
+            window.PlaylistEditor.setQueue(queue, 0);
+            window.PlaylistEditor.toggleStatus(queue.length > 0);
+            window.PlaylistEditor.toggleEditor(true);
+        }
+
+        function initializePlaylistEditorIntegration() {
+            if (!window.PlaylistEditor) {
+                return;
+            }
+
+            window.PlaylistEditor.onQueueChange = function(nextQueue) {
+                applyPlaylistEditorQueueToRuntime(nextQueue).catch(error => {
+                    showNotification(error && error.message ? error.message : 'Failed to apply playlist edits', 'warning');
+                });
+            };
         }
 
         function preventDefaults(e) {
@@ -2816,6 +3037,7 @@
         updateGlobalMuteToggle();
         applyGlobalAudioPolicy();
         refreshSlotOptions();
+        initializePlaylistEditorIntegration();
         syncFullscreenUiState();
 
         async function extractPlaylist() {
@@ -3450,13 +3672,13 @@
             
             showNotification(`Started Global Playlist with ${bulkExtractedLinks.length} videos (Limit: ${targetCount} slots)`);
             
-            updateGlobalUI();
+            updateGlobalPlaylistButtonState();
             checkGlobalPlaylistFill();
 
             // Update UI to show management mode buttons
             document.getElementById('globalStartBtn').style.display = 'none';
             document.getElementById('globalUpdateBtn').style.display = 'inline-block';
-            document.querySelector('button[onclick="toggleGlobalPlaylistModule()"]').style.background = '#d35400';
+            updateGlobalPlaylistButtonState();
 
             toggleBulkModule();
         }
@@ -3509,8 +3731,7 @@
             // Update UI to show management mode
             document.getElementById('globalStartBtn').style.display = 'none';
             document.getElementById('globalUpdateBtn').style.display = 'inline-block';
-            document.querySelector('button[onclick="toggleGlobalPlaylistModule()"]').style.background = '#d35400';
-            document.querySelector('button[onclick="toggleGlobalPlaylistModule()"]').textContent = 'Global Playlist (Active)';
+            updateGlobalPlaylistButtonState();
 
             toggleGlobalPlaylistModule();
         }
@@ -3570,8 +3791,7 @@
             // Reset UI
             document.getElementById('globalStartBtn').style.display = 'inline-block';
             document.getElementById('globalUpdateBtn').style.display = 'none';
-            document.querySelector('button[onclick="toggleGlobalPlaylistModule()"]').style.background = '#e67e22';
-            document.querySelector('button[onclick="toggleGlobalPlaylistModule()"]').textContent = 'Global Playlist';
+            updateGlobalPlaylistButtonState();
             
             showNotification('Global Playlist mode deactivated.', 'info');
             toggleGlobalPlaylistModule();

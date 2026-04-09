@@ -116,3 +116,25 @@
 - Favorite/remember persistence is localStorage-only and keyed by current tile source URL; there is no dedupe beyond URL exact-match normalization in this MVP.
 - Quality control applies directly only when `video.hls` levels are available; non-HLS media stores preference state but cannot force browser-level quality selection.
 - Validation for `v2/index.html` remains manual (plus inline script syntax check) with no browser automation added in this wave.
+
+## Wave 6 (V2 playlist editor integration)
+
+- **Timestamp:** 2026-04-09T16:00:42+02:00
+- **Scope:** Integrate the existing Playlist Editor assets into `v2/index.html`, add a topbar entry point, and wire editor queue changes back into runtime global/slot queues without rewriting playback core logic.
+- **Files changed:**
+  - `v2/index.html`
+  - `docs/implementation-progress.md`
+
+## Verification Steps (manual)
+
+- Open `v2/index.html` and confirm topbar shows `Playlist Editor` next to existing controls.
+- Activate `Global Playlist`, open `Playlist Editor`, reorder/add/remove links, and confirm changes update runtime global queue (new items become part of upcoming global rotation).
+- With global mode OFF, select a tile that has playback/queue, open `Playlist Editor`, and confirm list includes current item first plus queued upcoming entries.
+- In slot mode, reorder/add/remove and confirm first list item is applied as current tile playback and remaining entries persist as that slot queue.
+- With global mode OFF and no selected tile, click `Playlist Editor` and confirm warning notification appears with no state changes.
+- Run static sanity check: `node -e "const fs=require('fs'); const html=fs.readFileSync('v2/index.html','utf8'); const blocks=[...html.matchAll(/<script>([\\s\\S]*?)<\\/script>/g)]; blocks.forEach(m=>new Function(m[1]));"`.
+
+## Known Limitations
+
+- The Playlist Editor queue callback currently applies URL-only runtime queue entries (`durationSeconds` metadata is not preserved through editor round-trips).
+- Global editor view reflects the runtime global rotation queue order from `globalPlaylistIndex`; currently playing tiles are not individually represented because global mode is multi-slot.

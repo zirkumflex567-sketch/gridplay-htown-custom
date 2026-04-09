@@ -143,3 +143,14 @@
 
 - **Timestamp:** 2026-04-09T16:06:22+02:00
 - Active frontend iteration is now isolated in `v3/` (copied from post-wave `v2/index.html` plus editor assets) while `v2/index.html` is restored to baseline from `f07b932b85e7526742111bcc944e4453bf57f313` to keep the live v2 link stable.
+
+## Live Smoke Evidence (V3 Wave 6)
+
+- **Timestamp:** 2026-04-09T16:54:39+02:00
+- Ran live V3 smoke walkthrough covering home load, import module flow, global playlist module view, and radial tile menu open state.
+- Screenshot artifacts:
+  - `docs/screenshots/live-v3-wave6/01-home.png`
+  - `docs/screenshots/live-v3-wave6/02-import-module.png`
+  - `docs/screenshots/live-v3-wave6/03-global-playlist-module.png`
+  - `docs/screenshots/live-v3-wave6/04-tile-menu-open.png`
+  - `docs/screenshots/live-v3-wave6/README.md`

@@ -198,3 +198,23 @@
   - iframe mute/API check: **PASS** (`supportedCount=1`, mute-on command calls observed, `enablejsapi=1` present in YouTube embed)
   - playlist editor stale-context check: **PASS** (`contextCleared=true`, `staleWritePrevented=true`)
   - global advance retry/coalescing check: **PASS** (`retriedToSuccess=true`, `coalesced=true`, `maxConcurrent=1`)
+
+## Live Evidence Wave 8 (V3 post-fix complete bugtesting)
+
+- **Timestamp:** 2026-04-09T20:23:22+02:00
+- **Scope:** Complete post-fix live regression pass against `https://h-town.duckdns.org/gridplay/v3/` using BrowserUse CLI smoke plus deterministic Playwright assertions with recorded session video and screenshots.
+- **Totals:** 6 assertions executed, 6 passed, 0 failed.
+- **BrowserUse smoke:** `browser-use --session wave8-bugtest open "https://h-town.duckdns.org/gridplay/v3/" && browser-use --session wave8-bugtest close` -> URL opened and browser session closed.
+- **Artifacts:**
+  - `docs/screenshots/live-v3-wave8-bugtesting/01-core-ui.png`
+  - `docs/screenshots/live-v3-wave8-bugtesting/02-mixed-tiles-added.png`
+  - `docs/screenshots/live-v3-wave8-bugtesting/03-global-mute-on.png`
+  - `docs/screenshots/live-v3-wave8-bugtesting/04-global-mute-off.png`
+  - `docs/screenshots/live-v3-wave8-bugtesting/05-editor-stale-context.png`
+  - `docs/screenshots/live-v3-wave8-bugtesting/06-dead-url-advanced.png`
+  - `docs/screenshots/live-v3-wave8-bugtesting/07-module-overlay-open.png`
+  - `docs/screenshots/live-v3-wave8-bugtesting/08-fullscreen-active.png`
+  - `docs/screenshots/live-v3-wave8-bugtesting/session-video.webm`
+  - `docs/screenshots/live-v3-wave8-bugtesting/test-results.json`
+  - `docs/screenshots/live-v3-wave8-bugtesting/README.md`
+  - `docs/screenshots/live-v3-wave8-bugtesting/run-live-v3-wave8-bugtesting.mjs`

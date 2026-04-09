@@ -1,0 +1,161 @@
+{
+  "runStartedAt": "2026-04-09T18:22:49.726Z",
+  "runFinishedAt": "2026-04-09T18:23:22.848Z",
+  "targetUrl": "https://h-town.duckdns.org/gridplay/v3/",
+  "totals": {
+    "total": 6,
+    "passed": 6,
+    "failed": 0
+  },
+  "assertions": [
+    {
+      "name": "A) Core UI loads with expected controls",
+      "passed": true,
+      "timestamp": "2026-04-09T18:22:50.333Z",
+      "details": {
+        "durationMs": 106,
+        "url": "https://h-town.duckdns.org/gridplay/v3/"
+      }
+    },
+    {
+      "name": "B1) Add one YouTube iframe + one HTML5 MP4",
+      "passed": true,
+      "timestamp": "2026-04-09T18:22:50.480Z",
+      "details": {
+        "durationMs": 147,
+        "tileCount": 2
+      }
+    },
+    {
+      "name": "B2) Global mute labels + HTML5 muted states + iframe command path",
+      "passed": true,
+      "timestamp": "2026-04-09T18:22:51.078Z",
+      "details": {
+        "durationMs": 598,
+        "commandCount": 9,
+        "youtubeCalls": [
+          {
+            "provider": "youtube",
+            "videoId": "video-1",
+            "muted": false,
+            "timestamp": 1775758970348
+          },
+          {
+            "provider": "youtube",
+            "videoId": "video-1",
+            "muted": false,
+            "timestamp": 1775758970363
+          },
+          {
+            "provider": "youtube",
+            "videoId": "video-1",
+            "muted": true,
+            "timestamp": 1775758970650
+          },
+          {
+            "provider": "youtube",
+            "videoId": "video-1",
+            "muted": true,
+            "timestamp": 1775758970697
+          },
+          {
+            "provider": "youtube",
+            "videoId": "video-1",
+            "muted": true,
+            "timestamp": 1775758970702
+          },
+          {
+            "provider": "youtube",
+            "videoId": "video-1",
+            "muted": true,
+            "timestamp": 1775758970801
+          },
+          {
+            "provider": "youtube",
+            "videoId": "video-1",
+            "muted": true,
+            "timestamp": 1775758970813
+          },
+          {
+            "provider": "youtube",
+            "videoId": "video-1",
+            "muted": true,
+            "timestamp": 1775758970921
+          },
+          {
+            "provider": "youtube",
+            "videoId": "video-1",
+            "muted": true,
+            "timestamp": 1775758970934
+          }
+        ],
+        "hasYoutubeMute": true,
+        "hasYoutubeUnmute": true
+      }
+    },
+    {
+      "name": "C) Playlist editor stale slot context is cleared and stale write prevented",
+      "passed": true,
+      "timestamp": "2026-04-09T18:22:52.177Z",
+      "details": {
+        "durationMs": 1099,
+        "selectedTileId": "video-1",
+        "before": {
+          "playlistContextBefore": {
+            "mode": "slot",
+            "slotId": "video-1",
+            "version": 1
+          },
+          "firstTileSource": "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4"
+        },
+        "after": {
+          "playlistContextAfter": null,
+          "firstTileSource": "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
+          "selectedSlotId": ""
+        },
+        "contextCleared": true,
+        "staleWritePrevented": true
+      }
+    },
+    {
+      "name": "D) Dead URL retries then advances to playable next item",
+      "passed": true,
+      "timestamp": "2026-04-09T18:23:22.317Z",
+      "details": {
+        "durationMs": 30140,
+        "advanced": true,
+        "after": {
+          "currentSource": "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
+          "globalPlaylistIndex": 2
+        }
+      }
+    },
+    {
+      "name": "E) Module overlay + fullscreen sanity",
+      "passed": true,
+      "timestamp": "2026-04-09T18:23:22.780Z",
+      "details": {
+        "durationMs": 463,
+        "fullscreenEntered": true
+      }
+    }
+  ],
+  "runError": null,
+  "logs": {
+    "pageErrors": [],
+    "consoleMessages": []
+  },
+  "artifacts": {
+    "video": "docs/screenshots/live-v3-wave8-bugtesting/session-video.webm",
+    "screenshots": [
+      "docs/screenshots/live-v3-wave8-bugtesting/01-core-ui.png",
+      "docs/screenshots/live-v3-wave8-bugtesting/02-mixed-tiles-added.png",
+      "docs/screenshots/live-v3-wave8-bugtesting/03-global-mute-on.png",
+      "docs/screenshots/live-v3-wave8-bugtesting/04-global-mute-off.png",
+      "docs/screenshots/live-v3-wave8-bugtesting/05-editor-stale-context.png",
+      "docs/screenshots/live-v3-wave8-bugtesting/06-dead-url-advanced.png",
+      "docs/screenshots/live-v3-wave8-bugtesting/07-module-overlay-open.png",
+      "docs/screenshots/live-v3-wave8-bugtesting/08-fullscreen-active.png"
+    ]
+  }
+}

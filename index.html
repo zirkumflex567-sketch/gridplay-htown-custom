@@ -437,7 +437,8 @@
                     </div>
 
                     <div class="module-actions">
-                        <button class="btn" onclick="startGlobalPlaylist()" style="background: #e67e22; flex: 1;">Start Infinite Playlist</button>
+                        <button id="globalStartBtn" class="btn" onclick="startGlobalPlaylist()" style="background: #e67e22; flex: 1;">Start Infinite Playlist</button>
+                        <button id="globalUpdateBtn" class="btn" onclick="updateGlobalPlaylist()" style="background: #27ae60; flex: 1; display: none;">Apply Changes to Queue</button>
                         <button class="btn danger" onclick="stopGlobalPlaylist()" style="flex: 1;">Stop</button>
                     </div>
                 </div>
@@ -1462,8 +1463,6 @@
         async function extractBulkLinks() {
             const input = document.getElementById('bulkUrlInput');
             const resultsArea = document.getElementById('bulkResults');
-            const progress = document.getElementById('bulkProgress');
-            const fill = document.getElementById('bulkProgressFill');
             
             const rawText = input.value.trim();
             if (!rawText) {
@@ -1479,47 +1478,14 @@
                 return;
             }
 
-            resultsArea.value = `Found ${lines.length} URLs. Starting resolution...\n\n`;
-            progress.style.display = 'block';
-            
+            // Just identify them and show them in the results area
+            // We NO LONGER pre-resolve here to avoid the logic mismatch
             bulkExtractedLinks = lines;
-            bulkResolvedLinks = [];
+            resultsArea.value = lines.join('\n');
             
-            document.getElementById('bulkAddAllBtn').disabled = true;
-            document.getElementById('bulkCopyLinksBtn').disabled = true;
-
-            for (let i = 0; i < lines.length; i++) {
-                const url = lines[i];
-                const percentage = ((i + 1) / lines.length) * 100;
-                fill.style.width = `${percentage}%`;
-
-                if (isPmvhavenVideoUrl(url)) {
-                    try {
-                        const resolved = await resolvePmvhavenUrl(url);
-                        if (resolved && resolved.streamUrl) {
-                            const directLink = window.location.origin + resolved.streamUrl;
-                            bulkResolvedLinks.push(directLink);
-                            resultsArea.value += `${directLink}\n`;
-                        } else {
-                            resultsArea.value += `Failed: ${url}\n`;
-                        }
-                    } catch (e) {
-                        resultsArea.value += `Error: ${url} (${e.message})\n`;
-                    }
-                } else {
-                    // Non-PMVHaven link, just add as is
-                    bulkResolvedLinks.push(url);
-                    resultsArea.value += `${url}\n`;
-                }
-                
-                // Small delay to be respectful
-                await new Promise(r => setTimeout(r, 300));
-            }
-
-            showNotification(`Resolution complete! ${bulkResolvedLinks.length} links ready.`);
+            showNotification(`Identified ${lines.length} URLs. Click 'Add All to Grid' to process them.`);
             document.getElementById('bulkAddAllBtn').disabled = false;
             document.getElementById('bulkCopyLinksBtn').disabled = false;
-            setTimeout(() => { progress.style.display = 'none'; fill.style.width = '0%'; }, 1000);
         }
 
         function copyBulkLinks() {
@@ -1539,18 +1505,15 @@
         }
 
         async function addAllBulkToGrid() {
-            const linksToAdd = bulkResolvedLinks.length > 0 ? bulkResolvedLinks : bulkExtractedLinks;
+            if (bulkExtractedLinks.length === 0) return;
             
-            if (linksToAdd.length === 0) return;
+            showNotification(`Processing and adding ${bulkExtractedLinks.length} videos...`);
             
-            showNotification(`Adding ${linksToAdd.length} videos to grid...`);
-            
-            for (const link of linksToAdd) {
-                if (link.includes('/stream?url=')) {
-                    addVideo(link, null, { forceHtml5: true });
-                } else {
-                    await addVideoWithResolution(link);
-                }
+            // We use the standard robust pathway for every link
+            for (const link of bulkExtractedLinks) {
+                await addVideoWithResolution(link);
+                // Slight delay to avoid hammering the resolve API too fast
+                await new Promise(r => setTimeout(r, 300));
             }
             
             toggleBulkModule();
@@ -1593,12 +1556,40 @@
                 await new Promise(r => setTimeout(r, 800));
             }
 
+            // Update UI to show management mode
+            document.getElementById('globalStartBtn').style.display = 'none';
+            document.getElementById('globalUpdateBtn').style.display = 'inline-block';
+            document.querySelector('button[onclick="toggleGlobalPlaylistModule()"]').style.background = '#d35400';
+            document.querySelector('button[onclick="toggleGlobalPlaylistModule()"]').textContent = 'Global Playlist (Active)';
+
+            toggleGlobalPlaylistModule();
+        }
+
+        function updateGlobalPlaylist() {
+            const input = document.getElementById('globalPlaylistInput');
+            const rawText = input.value.trim();
+            const links = rawText.split(/[\n,\s]+/).map(l => l.trim()).filter(l => l && isValidUrl(l));
+            
+            if (links.length === 0) {
+                showNotification('The playlist cannot be empty', 'warning');
+                return;
+            }
+
+            globalPlaylistLinks = links;
+            showNotification(`Global Playlist updated! (${links.length} links)`, 'info');
             toggleGlobalPlaylistModule();
         }
 
         function stopGlobalPlaylist() {
             isGlobalPlaylistActive = false;
-            showNotification('Global Playlist mode deactivated. Current videos will stay, but won\'t loop.', 'info');
+            
+            // Reset UI
+            document.getElementById('globalStartBtn').style.display = 'inline-block';
+            document.getElementById('globalUpdateBtn').style.display = 'none';
+            document.querySelector('button[onclick="toggleGlobalPlaylistModule()"]').style.background = '#e67e22';
+            document.querySelector('button[onclick="toggleGlobalPlaylistModule()"]').textContent = 'Global Playlist';
+            
+            showNotification('Global Playlist mode deactivated.', 'info');
             toggleGlobalPlaylistModule();
         }
 

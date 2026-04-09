@@ -493,6 +493,7 @@
                 <button class="btn" onclick="togglePawgMixModule()" style="background: #8e44ad;">Generate PAWG Mix</button>
                 <button class="btn" onclick="toggleSearchPlaylistModule()" style="background: #1abc9c;">Search Playlist v2</button>
                 <button class="btn" onclick="toggleGlobalPlaylistModule()" style="background: #e67e22;">Global Playlist</button>
+                <button class="btn" id="globalMuteToggle" onclick="toggleGlobalMuteMode()" aria-pressed="false">Global Mute: OFF</button>
                 <button class="btn" onclick="saveConfig()">Save Config</button>
                 <button class="btn" onclick="loadConfig()">Load Config</button>
                 <button class="btn danger" onclick="clearAll()">Clear All</button>
@@ -710,6 +711,10 @@
         const VIDEO_STARTUP_TIMEOUT_MS = 10000;
         const VIDEO_STALL_TIMEOUT_MS = 10000;
         const slotAttemptStates = new Map();
+        let globalMuteMode = false;
+        let activeAudioVideoId = '';
+        let isApplyingAudioPolicy = false;
+        let isAudioPolicySyncQueued = false;
 
         function clearAttemptTimers(state) {
             if (!state) {
@@ -885,6 +890,15 @@
         const controlsToggle = document.getElementById('controlsToggle');
         const slotSelect = document.getElementById('slotSelect');
         const pawgTargetSlot = document.getElementById('pawgTargetSlot');
+        const globalMuteToggle = document.getElementById('globalMuteToggle');
+
+        const audioPolicyObserver = new MutationObserver(() => {
+            if (isApplyingAudioPolicy) {
+                return;
+            }
+            queueGlobalAudioPolicy();
+        });
+        audioPolicyObserver.observe(videoGrid, { childList: true, subtree: true });
 
         function toQueueEntry(item) {
             if (!item) {
@@ -1095,6 +1109,112 @@
             }
         }
 
+        function updateGlobalMuteToggle() {
+            if (!globalMuteToggle) {
+                return;
+            }
+
+            globalMuteToggle.textContent = `Global Mute: ${globalMuteMode ? 'ON' : 'OFF'}`;
+            globalMuteToggle.setAttribute('aria-pressed', globalMuteMode ? 'true' : 'false');
+            globalMuteToggle.style.background = globalMuteMode ? '#dc3545' : '#2f855a';
+        }
+
+        function getHtml5TileVideos() {
+            return videos.map(entry => {
+                const tile = document.getElementById(entry.id);
+                if (!tile) {
+                    return null;
+                }
+
+                const media = tile.querySelector('video');
+                if (!media) {
+                    return null;
+                }
+
+                return {
+                    videoId: entry.id,
+                    media
+                };
+            }).filter(Boolean);
+        }
+
+        function getNextHtml5AudioVideoId(fromVideoId = '') {
+            const html5Tiles = getHtml5TileVideos();
+            if (html5Tiles.length === 0) {
+                return '';
+            }
+
+            const ids = html5Tiles.map(item => item.videoId);
+            let startIndex = ids.indexOf(fromVideoId);
+
+            if (startIndex === -1) {
+                startIndex = ids.indexOf(activeAudioVideoId);
+            }
+
+            const nextIndex = ((startIndex >= 0 ? startIndex : -1) + 1) % ids.length;
+            return ids[nextIndex];
+        }
+
+        function applyGlobalAudioPolicy(preferredAudioVideoId = '') {
+            if (isApplyingAudioPolicy) {
+                return;
+            }
+
+            isApplyingAudioPolicy = true;
+
+            try {
+                const html5Tiles = getHtml5TileVideos();
+                if (html5Tiles.length === 0) {
+                    activeAudioVideoId = '';
+                    updateGlobalMuteToggle();
+                    return;
+                }
+
+                const hasPreferred = preferredAudioVideoId && html5Tiles.some(item => item.videoId === preferredAudioVideoId);
+                const hasCurrent = activeAudioVideoId && html5Tiles.some(item => item.videoId === activeAudioVideoId);
+
+                if (hasPreferred) {
+                    activeAudioVideoId = preferredAudioVideoId;
+                } else if (!hasCurrent) {
+                    activeAudioVideoId = html5Tiles[0].videoId;
+                }
+
+                html5Tiles.forEach(item => {
+                    item.media.muted = globalMuteMode || item.videoId !== activeAudioVideoId;
+                });
+
+                updateGlobalMuteToggle();
+            } finally {
+                isApplyingAudioPolicy = false;
+            }
+        }
+
+        function queueGlobalAudioPolicy(preferredAudioVideoId = '') {
+            if (isAudioPolicySyncQueued) {
+                return;
+            }
+
+            isAudioPolicySyncQueued = true;
+            Promise.resolve().then(() => {
+                isAudioPolicySyncQueued = false;
+                applyGlobalAudioPolicy(preferredAudioVideoId);
+            });
+        }
+
+        function toggleGlobalMuteMode() {
+            globalMuteMode = !globalMuteMode;
+            applyGlobalAudioPolicy();
+        }
+
+        function switchActiveAudioToNext(fromVideoId = '') {
+            const nextVideoId = getNextHtml5AudioVideoId(fromVideoId);
+            if (!nextVideoId) {
+                return;
+            }
+
+            applyGlobalAudioPolicy(nextVideoId);
+        }
+
         function bindSlotSelection(videoItem) {
             videoItem.addEventListener('click', function(e) {
                 if (e.target.closest('.video-remove')) {
@@ -1102,6 +1222,12 @@
                 }
                 setSelectedSlot(videoItem.id);
             });
+
+            videoItem.oncontextmenu = function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                switchActiveAudioToNext(videoItem.id);
+            };
         }
 
         function convertYouTubeUrl(url) {
@@ -1482,6 +1608,15 @@
                         networkState: video.networkState
                     });
                 });
+
+                video.addEventListener('volumechange', function() {
+                    if (isApplyingAudioPolicy) {
+                        return;
+                    }
+                    queueGlobalAudioPolicy();
+                });
+
+                queueGlobalAudioPolicy();
             }
         }
 
@@ -1819,10 +1954,12 @@
                 teardownSlotAttemptState(videoId);
             }
             videos = [];
+            activeAudioVideoId = '';
             slotPlaylists.clear();
             videoGrid.innerHTML = '';
             updateGridLayout();
             showDropZone();
+            applyGlobalAudioPolicy();
         }
 
         // Handle file input
@@ -1869,6 +2006,8 @@
             controlsToggle.title = hidden ? 'Show controls' : 'Hide controls';
         });
 
+        updateGlobalMuteToggle();
+        applyGlobalAudioPolicy();
         refreshSlotOptions();
 
         // Playlist Module Functions

@@ -71,3 +71,23 @@
 
 - Fullscreen behavior depends on browser Fullscreen API support and may require user gesture on some mobile browsers.
 - Validation for `v2/index.html` remains manual aside from static syntax check of extracted inline script.
+
+## Wave 4 (V2 import flow unification)
+
+- **Timestamp:** 2026-04-09T15:47:29+02:00
+- **Scope:** Consolidate topbar import actions into one entry point and merge PMVHaven playlist extraction into the existing bulk import workflow while preserving legacy playlist module code as fallback.
+- **Files changed:**
+  - `v2/index.html`
+  - `docs/implementation-progress.md`
+
+## Verification Steps (manual)
+
+- Open `v2/index.html`, click `Import / Extract`, paste one PMVHaven playlist-like URL, click `Process Input`, and confirm links are extracted via the playlist path and shown in results.
+- In `Import / Extract`, paste multiple direct/page URLs (newline/space/comma separated), click `Process Input`, and confirm current identify/import behavior remains (links echoed into results).
+- Click `Add All to Grid` after each path and confirm global playlist add-all behavior still starts with the configured slot limit.
+- Click `Copy All Links` and confirm clipboard output matches the current results text.
+
+## Known Limitations
+
+- Playlist extraction in the unified flow intentionally triggers only when exactly one URL is pasted and it is PMVHaven playlist-like; mixed/multi-input batches stay on the existing identify/import path.
+- Legacy `playlistModule` UI remains in code for low-risk fallback but is no longer exposed via a dedicated topbar action.

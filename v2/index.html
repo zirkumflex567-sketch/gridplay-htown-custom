@@ -512,8 +512,7 @@
             <input type="file" class="file-input" id="fileInput" accept="video/*" multiple>
             <button class="btn" onclick="document.getElementById('fileInput').click()">Upload Files</button>
             <div class="global-controls">
-                <button class="btn" onclick="togglePlaylistModule()" style="background: #6c5ce7;">Playlist Extractor</button>
-                <button class="btn" onclick="toggleBulkModule()" style="background: #20bf6b;">Bulk Import / Tabs</button>
+                <button class="btn" onclick="toggleBulkModule()" style="background: #20bf6b;">Import / Extract</button>
                 <button class="btn" onclick="togglePawgMixModule()" style="background: #8e44ad;">Generate PAWG Mix</button>
                 <button class="btn" onclick="toggleSearchPlaylistModule()" style="background: #1abc9c;">Search Playlist v2</button>
                 <button class="btn" onclick="toggleGlobalPlaylistModule()" style="background: #e67e22;">Global Playlist</button>
@@ -563,20 +562,20 @@
         <div class="module-container" id="bulkImportModule">
             <div class="module-glass">
                 <div class="module-header">
-                    <h3>Bulk Link Importer & Tab Extractor</h3>
+                    <h3>Import / Extract Links</h3>
                     <button class="close-btn" onclick="toggleBulkModule()">×</button>
                 </div>
                 <div class="module-content">
-                    <p style="font-size: 12px; color: #888; margin-bottom: 10px;">Paste URLs from your open tabs or clipboard. All video links will be resolved to direct files.</p>
-                    <textarea id="bulkUrlInput" placeholder="Paste multiple URLs here (one per line, space or comma separated)..." class="module-input" style="height: 120px;"></textarea>
+                    <p style="font-size: 12px; color: #888; margin-bottom: 10px;">Paste one PMVHaven playlist URL to extract links, or paste multiple direct/page URLs to import as a batch.</p>
+                    <textarea id="bulkUrlInput" placeholder="Paste one playlist URL OR multiple links (newline, space, or comma separated)..." class="module-input" style="height: 120px;"></textarea>
                     <div class="module-actions">
-                        <button class="btn" onclick="extractBulkLinks()" style="background: #20bf6b;">Resolve All Links</button>
+                        <button class="btn" onclick="extractBulkLinks()" style="background: #20bf6b;">Process Input</button>
                     </div>
                     <div class="progress-bar" id="bulkProgress">
                         <div class="progress-fill" id="bulkProgressFill"></div>
                     </div>
                     <div class="results-container">
-                        <textarea id="bulkResults" readonly placeholder="Resolved direct links will appear here..."></textarea>
+                        <textarea id="bulkResults" readonly placeholder="Extracted or identified links will appear here..."></textarea>
                     </div>
                     <div class="module-footer">
                         <button class="btn" id="bulkCopyLinksBtn" onclick="copyBulkLinks()" disabled>Copy All Links</button>
@@ -2169,16 +2168,6 @@
         refreshSlotOptions();
         syncFullscreenUiState();
 
-        // Playlist Module Functions
-        function togglePlaylistModule() {
-            const module = document.getElementById('playlistModule');
-            const overlay = document.getElementById('modalOverlay');
-            const isVisible = module.style.display === 'block';
-            
-            module.style.display = isVisible ? 'none' : 'block';
-            overlay.style.display = isVisible ? 'none' : 'block';
-        }
-
         async function extractPlaylist() {
             const urlInput = document.getElementById('playlistUrlInput');
             const resultsArea = document.getElementById('playlistResults');
@@ -2291,7 +2280,7 @@
             togglePlaylistModule();
         }
 
-        // Bulk Module Functions
+        // Bulk / Import Module Functions
         function closeAllModules() {
             document.getElementById('bulkImportModule').style.display = 'none';
             document.getElementById('playlistModule').style.display = 'none';
@@ -2361,6 +2350,26 @@
                 updatePawgModeFields();
                 module.style.display = 'block';
                 overlay.style.display = 'block';
+            }
+        }
+
+        function isLikelyPlaylistImportUrl(url) {
+            if (!url || !isValidUrl(url)) {
+                return false;
+            }
+
+            try {
+                const parsed = new URL(url);
+                const host = parsed.hostname.toLowerCase();
+                const pathAndQuery = `${parsed.pathname}${parsed.search}`.toLowerCase();
+                const playlistLike = (
+                    pathAndQuery.includes('playlist') ||
+                    /[?&](list|playlist|collection)=/.test(parsed.search.toLowerCase())
+                );
+
+                return host.includes('pmvhaven') && playlistLike;
+            } catch (_) {
+                return false;
             }
         }
 
@@ -2714,6 +2723,35 @@
             
             if (lines.length === 0) {
                 showNotification('No valid URLs found', 'warning');
+                return;
+            }
+
+            if (lines.length === 1 && isLikelyPlaylistImportUrl(lines[0])) {
+                const playlistUrl = lines[0];
+                resultsArea.value = 'Fetching playlist content...';
+                bulkExtractedLinks = [];
+                document.getElementById('bulkAddAllBtn').disabled = true;
+                document.getElementById('bulkCopyLinksBtn').disabled = true;
+
+                try {
+                    const response = await fetch(`${GRIDPLAY_API_BASE}/playlist?url=${encodeURIComponent(playlistUrl)}`);
+                    const data = await readApiJsonOrThrow(response, 'Failed to extract playlist');
+
+                    if (Array.isArray(data.links) && data.links.length > 0) {
+                        bulkExtractedLinks = data.links;
+                        resultsArea.value = data.links.join('\n');
+                        document.getElementById('bulkAddAllBtn').disabled = false;
+                        document.getElementById('bulkCopyLinksBtn').disabled = false;
+                        showNotification(`Extracted ${data.links.length} links from playlist.`);
+                    } else {
+                        resultsArea.value = 'No video links found in this playlist.';
+                        showNotification('No playlist links found', 'warning');
+                    }
+                } catch (error) {
+                    resultsArea.value = `Error: ${error.message}`;
+                    showNotification(error.message, 'warning');
+                }
+
                 return;
             }
 

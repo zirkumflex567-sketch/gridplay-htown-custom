@@ -160,3 +160,19 @@
 - **Timestamp:** 2026-04-09T16:56:39+02:00
 - **Scope:** Added backend video error log inspection endpoints by exposing JSON list retrieval (`GET /video-errors`) and an admin HTML table view (`GET /admin/logs`) backed by the same JSONL telemetry file used by `POST /video-errors`.
 - **Notes:** Missing log files now return empty results, malformed JSONL lines are skipped safely, and list retrieval supports clamped `limit` query handling for recent-entry inspection.
+
+## Live Evidence Wave 7 (V3 function pass)
+
+- **Timestamp:** 2026-04-09T17:15:16+02:00
+- **Scope:** Executed evidence-grade live browser automation against `https://h-town.duckdns.org/gridplay/v3/` covering UI identity, add flow, radial actions, audio switch, global mute, import module, and fullscreen state signal.
+- **BrowserUse check:** CLI available and open/close smoke attempt executed; Playwright Chromium fallback used for deterministic assertions with video capture and machine-readable report.
+- **Artifacts:**
+  - `docs/screenshots/live-v3-wave7/01-home.png`
+  - `docs/screenshots/live-v3-wave7/02-two-tiles.png`
+  - `docs/screenshots/live-v3-wave7/03-radial-menu-open.png`
+  - `docs/screenshots/live-v3-wave7/04-import-module-open.png`
+  - `docs/screenshots/live-v3-wave7/05-fullscreen-state.png`
+  - `docs/screenshots/live-v3-wave7/session-video.webm`
+  - `docs/screenshots/live-v3-wave7/test-results.json`
+  - `docs/screenshots/live-v3-wave7/README.md`
+  - `docs/screenshots/live-v3-wave7/run-live-v3-wave7.mjs`

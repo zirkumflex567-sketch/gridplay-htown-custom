@@ -1,0 +1,204 @@
+{
+  "meta": {
+    "startedAt": "2026-04-09T15:15:08.104Z",
+    "finishedAt": "2026-04-09T15:15:16.112Z",
+    "url": "https://h-town.duckdns.org/gridplay/v3/",
+    "mode": "playwright-fallback-headless-chromium",
+    "browserUseAttempted": true,
+    "browserUseAvailable": true
+  },
+  "totals": {
+    "assertions": 8,
+    "passed": 8,
+    "failed": 0
+  },
+  "assertions": [
+    {
+      "name": "A) topbar required buttons visible",
+      "pass": true,
+      "timestamp": "2026-04-09T15:15:10.165Z",
+      "details": {
+        "topbarLabels": [
+          "Add",
+          "Upload Files",
+          "Import / Extract",
+          "Generate PAWG Mix",
+          "Search Playlist v2",
+          "Global Playlist",
+          "Playlist Editor",
+          "Global Mute: OFF",
+          "Save Config",
+          "Load Config",
+          "Clear All"
+        ],
+        "missingTopbar": []
+      }
+    },
+    {
+      "name": "B) add flow creates at least one tile",
+      "pass": true,
+      "timestamp": "2026-04-09T15:15:10.300Z",
+      "details": {
+        "tileCountAfterFirstAdd": 1,
+        "addedUrl": "https://samplelib.com/lib/preview/mp4/sample-5s.mp4"
+      }
+    },
+    {
+      "name": "D0) at least two HTML5 tiles available",
+      "pass": true,
+      "timestamp": "2026-04-09T15:15:11.577Z",
+      "details": {
+        "tileCountAfterSecondAdd": 2,
+        "html5StatesAfterSecondAdd": [
+          {
+            "tileId": "video-1",
+            "muted": false,
+            "paused": false,
+            "currentTime": 0.554919
+          },
+          {
+            "tileId": "video-2",
+            "muted": true,
+            "paused": false,
+            "currentTime": 0.917931
+          }
+        ]
+      }
+    },
+    {
+      "name": "C) radial menu shows required actions",
+      "pass": true,
+      "timestamp": "2026-04-09T15:15:12.047Z",
+      "details": {
+        "radialState": {
+          "isOpen": true,
+          "actions": [
+            "Q",
+            "R",
+            "N",
+            "F",
+            "M"
+          ]
+        },
+        "missingRadial": []
+      }
+    },
+    {
+      "name": "D) right-click tile menu switches active audio tile",
+      "pass": true,
+      "timestamp": "2026-04-09T15:15:12.795Z",
+      "details": {
+        "beforeAudioSwitch": [
+          {
+            "tileId": "video-1",
+            "muted": false,
+            "paused": false,
+            "currentTime": 1.201674
+          },
+          {
+            "tileId": "video-2",
+            "muted": true,
+            "paused": false,
+            "currentTime": 1.574589
+          }
+        ],
+        "afterAudioSwitch": [
+          {
+            "tileId": "video-1",
+            "muted": true,
+            "paused": false,
+            "currentTime": 1.787994
+          },
+          {
+            "tileId": "video-2",
+            "muted": false,
+            "paused": false,
+            "currentTime": 2.162497
+          }
+        ],
+        "unmutedBefore": [
+          "video-1"
+        ],
+        "unmutedAfter": [
+          "video-2"
+        ]
+      }
+    },
+    {
+      "name": "E) Global Mute ON/OFF updates muted states",
+      "pass": true,
+      "timestamp": "2026-04-09T15:15:13.704Z",
+      "details": {
+        "beforeGlobalMute": [
+          {
+            "tileId": "video-1",
+            "muted": true,
+            "paused": false,
+            "currentTime": 1.789681
+          },
+          {
+            "tileId": "video-2",
+            "muted": false,
+            "paused": false,
+            "currentTime": 2.164165
+          }
+        ],
+        "onState": [
+          {
+            "tileId": "video-1",
+            "muted": true,
+            "paused": false,
+            "currentTime": 2.235887
+          },
+          {
+            "tileId": "video-2",
+            "muted": true,
+            "paused": false,
+            "currentTime": 2.602142
+          }
+        ],
+        "offState": [
+          {
+            "tileId": "video-1",
+            "muted": true,
+            "paused": false,
+            "currentTime": 2.694096
+          },
+          {
+            "tileId": "video-2",
+            "muted": false,
+            "paused": false,
+            "currentTime": 3.08623
+          }
+        ],
+        "onLabel": "Global Mute: ON",
+        "offLabel": "Global Mute: OFF"
+      }
+    },
+    {
+      "name": "F) Import/Extract module opens",
+      "pass": true,
+      "timestamp": "2026-04-09T15:15:14.262Z",
+      "details": {
+        "importVisible": true
+      }
+    },
+    {
+      "name": "G) fullscreen toggle emits state change signal",
+      "pass": true,
+      "timestamp": "2026-04-09T15:15:15.376Z",
+      "details": {
+        "fsBefore": {
+          "fullscreenElement": false,
+          "bodyFullscreenClass": false,
+          "title": "Enter fullscreen"
+        },
+        "fsAfter": {
+          "fullscreenElement": true,
+          "bodyFullscreenClass": true,
+          "title": "Exit fullscreen"
+        }
+      }
+    }
+  ]
+}

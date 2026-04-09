@@ -706,6 +706,175 @@
         const slotPlaylists = new Map();
         const GRIDPLAY_API_BASE = '/gridplay-api';
         const GRIDPLAY_API_V2_BASE = '/gridplay-api-v2';
+        const VIDEO_MAX_AUTO_RETRIES = 2;
+        const VIDEO_STARTUP_TIMEOUT_MS = 10000;
+        const VIDEO_STALL_TIMEOUT_MS = 10000;
+        const slotAttemptStates = new Map();
+
+        function clearAttemptTimers(state) {
+            if (!state) {
+                return;
+            }
+            if (state.startupTimer) {
+                clearTimeout(state.startupTimer);
+                state.startupTimer = null;
+            }
+            if (state.stallTimer) {
+                clearTimeout(state.stallTimer);
+                state.stallTimer = null;
+            }
+        }
+
+        function teardownSlotAttemptState(videoId) {
+            const state = slotAttemptStates.get(videoId);
+            if (!state) {
+                return;
+            }
+            clearAttemptTimers(state);
+            slotAttemptStates.delete(videoId);
+        }
+
+        function beginSlotAttempt(videoId, src, name = null, options = {}) {
+            const previous = slotAttemptStates.get(videoId);
+            const token = previous ? previous.token + 1 : 1;
+            clearAttemptTimers(previous);
+
+            const cleanedOptions = { ...options };
+            delete cleanedOptions.__retryCount;
+            delete cleanedOptions.__suppressNotification;
+
+            const retryCount = Number(options.__retryCount);
+            const state = {
+                token,
+                src,
+                name,
+                options: cleanedOptions,
+                retryCount: Number.isFinite(retryCount) ? Math.max(0, retryCount) : 0,
+                started: false,
+                failureHandled: false,
+                startupTimer: null,
+                stallTimer: null
+            };
+
+            state.startupTimer = setTimeout(() => {
+                handleVideoAttemptFailure(videoId, token, 'startup-timeout', 'Video did not begin playback before startup timeout.', {
+                    timeoutMs: VIDEO_STARTUP_TIMEOUT_MS
+                });
+            }, VIDEO_STARTUP_TIMEOUT_MS);
+
+            slotAttemptStates.set(videoId, state);
+            return state;
+        }
+
+        function markAttemptStarted(videoId, token) {
+            const state = slotAttemptStates.get(videoId);
+            if (!state || state.token !== token || state.failureHandled) {
+                return;
+            }
+
+            state.started = true;
+            if (state.startupTimer) {
+                clearTimeout(state.startupTimer);
+                state.startupTimer = null;
+            }
+            if (state.stallTimer) {
+                clearTimeout(state.stallTimer);
+                state.stallTimer = null;
+            }
+        }
+
+        function scheduleStallFailure(videoId, token) {
+            const state = slotAttemptStates.get(videoId);
+            if (!state || state.token !== token || state.failureHandled || state.stallTimer) {
+                return;
+            }
+
+            state.stallTimer = setTimeout(() => {
+                handleVideoAttemptFailure(videoId, token, 'stalled-timeout', 'Video remained stalled without playback progress.', {
+                    timeoutMs: VIDEO_STALL_TIMEOUT_MS
+                });
+            }, VIDEO_STALL_TIMEOUT_MS);
+        }
+
+        function clearStallFailure(videoId, token) {
+            const state = slotAttemptStates.get(videoId);
+            if (!state || state.token !== token || !state.stallTimer) {
+                return;
+            }
+
+            clearTimeout(state.stallTimer);
+            state.stallTimer = null;
+        }
+
+        function getVideoErrorDetails(video) {
+            const mediaError = video && video.error ? video.error : null;
+            const code = mediaError ? mediaError.code : null;
+            const codeMap = {
+                1: 'MEDIA_ERR_ABORTED',
+                2: 'MEDIA_ERR_NETWORK',
+                3: 'MEDIA_ERR_DECODE',
+                4: 'MEDIA_ERR_SRC_NOT_SUPPORTED'
+            };
+
+            return {
+                code,
+                label: codeMap[code] || 'UNKNOWN_MEDIA_ERROR'
+            };
+        }
+
+        async function reportVideoErrorToBackend(payload) {
+            try {
+                await fetch(`${GRIDPLAY_API_BASE}/video-errors`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+            } catch (_) {
+                // Logging failures should never interrupt playback flow.
+            }
+        }
+
+        async function handleVideoAttemptFailure(videoId, token, reasonCode, message, context = {}) {
+            const state = slotAttemptStates.get(videoId);
+            if (!state || state.token !== token || state.failureHandled) {
+                return;
+            }
+
+            state.failureHandled = true;
+            clearAttemptTimers(state);
+
+            if (!document.getElementById(videoId)) {
+                slotAttemptStates.delete(videoId);
+                return;
+            }
+
+            if (state.retryCount < VIDEO_MAX_AUTO_RETRIES) {
+                await loadSourceIntoSlot(videoId, state.src, state.name, {
+                    ...state.options,
+                    __retryCount: state.retryCount + 1,
+                    __suppressNotification: true
+                });
+                return;
+            }
+
+            await reportVideoErrorToBackend({
+                url: state.src,
+                reasonCode,
+                message,
+                context: {
+                    ...context,
+                    retryLimit: VIDEO_MAX_AUTO_RETRIES,
+                    globalPlaylistActive: isGlobalPlaylistActive,
+                    hasSlotPlaylist: slotPlaylists.has(videoId)
+                },
+                videoId,
+                attempt: state.retryCount + 1,
+                timestamp: new Date().toISOString()
+            });
+
+            slotAttemptStates.delete(videoId);
+            await advancePlaylist(videoId);
+        }
 
         // Drag and drop functionality
         const dropZone = document.getElementById('dropZone');
@@ -1214,7 +1383,7 @@
             </video>`;
         }
 
-        function wireMediaEvents(videoId) {
+        function wireMediaEvents(videoId, meta = {}) {
             const videoItem = document.getElementById(videoId);
             if (!videoItem) {
                 return;
@@ -1222,6 +1391,8 @@
 
             const video = videoItem.querySelector('video');
             if (video) {
+                const attemptState = beginSlotAttempt(videoId, meta.src || video.currentSrc || '', meta.name || null, meta.options || {});
+                const attemptToken = attemptState.token;
                 const source = video.querySelector('source');
                 const isHls = source && (source.type === 'application/x-mpegURL' || source.src.includes('.m3u8'));
                 
@@ -1248,7 +1419,17 @@
                                     break;
                                 default:
                                     hls.destroy();
-                                    advancePlaylist(videoId);
+                                    handleVideoAttemptFailure(
+                                        videoId,
+                                        attemptToken,
+                                        'hls-fatal',
+                                        data.details || 'Fatal HLS playback error.',
+                                        {
+                                            hlsType: data.type || null,
+                                            hlsDetails: data.details || null,
+                                            hlsFatal: true
+                                        }
+                                    );
                                     break;
                             }
                         }
@@ -1265,12 +1446,41 @@
                     }
                 });
 
+                video.addEventListener('canplay', function() {
+                    clearStallFailure(videoId, attemptToken);
+                });
+
+                video.addEventListener('playing', function() {
+                    markAttemptStarted(videoId, attemptToken);
+                });
+
+                video.addEventListener('timeupdate', function() {
+                    if (video.currentTime > 0) {
+                        markAttemptStarted(videoId, attemptToken);
+                    }
+                    clearStallFailure(videoId, attemptToken);
+                });
+
+                video.addEventListener('stalled', function() {
+                    scheduleStallFailure(videoId, attemptToken);
+                });
+
+                video.addEventListener('progress', function() {
+                    clearStallFailure(videoId, attemptToken);
+                });
+
                 video.addEventListener('ended', function() {
+                    teardownSlotAttemptState(videoId);
                     advancePlaylist(videoId);
                 });
 
                 video.addEventListener('error', function() {
-                    advancePlaylist(videoId);
+                    const details = getVideoErrorDetails(video);
+                    handleVideoAttemptFailure(videoId, attemptToken, 'html5-error', details.label, {
+                        mediaErrorCode: details.code,
+                        readyState: video.readyState,
+                        networkState: video.networkState
+                    });
                 });
             }
         }
@@ -1280,6 +1490,8 @@
             if (!videoItem) {
                 return;
             }
+
+            teardownSlotAttemptState(videoId);
 
             const oldVideo = videoItem.querySelector('video');
             if (oldVideo && oldVideo.hls) {
@@ -1301,7 +1513,7 @@
                 }
             }
 
-            wireMediaEvents(videoId);
+            wireMediaEvents(videoId, { src, name, options });
         }
 
         function addVideo(src, name = null, options = {}) {
@@ -1332,7 +1544,7 @@
                         Resolving stream...
                     </div>
                 `;
-                loadSourceIntoSlot(videoId, src, name);
+                loadSourceIntoSlot(videoId, src, name, options);
             } else {
                 updateVideoSlotContent(videoId, src, name, options);
             }
@@ -1367,7 +1579,9 @@
                     bindSlotSelection(videoItem);
                 }
 
-                showNotification(error.message || 'PMVHaven video could not be loaded', 'warning');
+                if (!options.__suppressNotification && !isGlobalPlaylistActive) {
+                    showNotification(error.message || 'PMVHaven video could not be loaded', 'warning');
+                }
                 return false;
             }
         }
@@ -1387,7 +1601,10 @@
             const maxAttempts = Math.max(playlist.queue.length, 1);
             for (let attempt = 0; attempt < maxAttempts; attempt++) {
                 const next = playlist.queue.shift();
-                const loaded = await loadSourceIntoSlot(videoId, next.src, next.title, { forceHtml5: true });
+                const loaded = await loadSourceIntoSlot(videoId, next.src, next.title, {
+                    forceHtml5: true,
+                    __suppressNotification: true
+                });
                 if (loaded) {
                     refillPlaylistQueueIfNeeded(playlist);
                     if (!playlist.loop && playlist.queue.length === 0) {
@@ -1453,6 +1670,7 @@
         function removeVideo(videoId) {
             const videoElement = document.getElementById(videoId);
             if (videoElement) {
+                teardownSlotAttemptState(videoId);
                 const oldVideo = videoElement.querySelector('video');
                 if (oldVideo && oldVideo.hls) {
                     oldVideo.hls.destroy();
@@ -1597,6 +1815,9 @@
         }
 
         function clearAll() {
+            for (const [videoId] of slotAttemptStates) {
+                teardownSlotAttemptState(videoId);
+            }
             videos = [];
             slotPlaylists.clear();
             videoGrid.innerHTML = '';
@@ -2266,7 +2487,7 @@
             while (videos.length < globalPlaylistTargetCount) {
                 const link = globalPlaylistLinks[globalPlaylistIndex % globalPlaylistLinks.length];
                 globalPlaylistIndex++;
-                addVideo(link);
+                addVideo(link, null, { __suppressNotification: true });
                 // Slight delay to avoid layout jitter
                 await new Promise(r => setTimeout(r, 200));
             }
@@ -2376,9 +2597,8 @@
             if (isGlobalPlaylistActive) {
                 const link = globalPlaylistLinks[globalPlaylistIndex % globalPlaylistLinks.length];
                 globalPlaylistIndex++;
-                
-                showNotification(`Global Mode: Replacing finished video in slot ${videoId.split('-')[1]}...`);
-                await loadSourceIntoSlot(videoId, link);
+
+                await loadSourceIntoSlot(videoId, link, null, { __suppressNotification: true });
                 return;
             }
             // Fallback to original per-slot logic

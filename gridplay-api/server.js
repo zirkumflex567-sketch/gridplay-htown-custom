@@ -2,6 +2,8 @@
 'use strict';
 
 const http = require('http');
+const fs = require('fs/promises');
+const path = require('path');
 const { Readable } = require('stream');
 const { URL } = require('url');
 
@@ -36,6 +38,152 @@ const PMVHAVEN_DISCOVERY_URLS = [
     'https://pmvhaven.com/search?query=pmv'
 ];
 const FALLBACK_DURATION_SECONDS = 240;
+const VIDEO_ERROR_LOG_PATH = process.env.VIDEO_ERROR_LOG_PATH
+    ? path.resolve(process.env.VIDEO_ERROR_LOG_PATH)
+    : path.join(__dirname, 'tmp', 'logs', 'video-errors.jsonl');
+
+function sanitizeString(value, maxLength = 2048) {
+    if (typeof value !== 'string') {
+        return null;
+    }
+
+    const normalized = value.replace(/[\u0000-\u001f\u007f]/g, ' ').trim();
+    if (!normalized) {
+        return null;
+    }
+
+    return normalized.slice(0, maxLength);
+}
+
+function sanitizeUrl(value) {
+    const normalized = sanitizeString(value, 4096);
+    if (!normalized) {
+        return null;
+    }
+
+    try {
+        const parsed = new URL(normalized);
+        if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+            return null;
+        }
+        return parsed.toString();
+    } catch (_) {
+        return null;
+    }
+}
+
+function sanitizeReasonCode(value) {
+    const normalized = sanitizeString(value, 64);
+    if (!normalized) {
+        return 'unknown';
+    }
+
+    const compact = normalized.toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/-+/g, '-');
+    return compact || 'unknown';
+}
+
+function sanitizeAttempt(value) {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) {
+        return null;
+    }
+    return Math.max(1, Math.min(20, Math.round(parsed)));
+}
+
+function sanitizeTimestamp(value) {
+    const normalized = sanitizeString(value, 64);
+    if (!normalized) {
+        return new Date().toISOString();
+    }
+
+    const parsed = new Date(normalized);
+    if (Number.isNaN(parsed.getTime())) {
+        return new Date().toISOString();
+    }
+    return parsed.toISOString();
+}
+
+function sanitizeContext(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        return {};
+    }
+
+    const sanitized = {};
+    const entries = Object.entries(value).slice(0, 25);
+    for (const [rawKey, rawVal] of entries) {
+        const key = sanitizeString(rawKey, 80);
+        if (!key) {
+            continue;
+        }
+
+        if (typeof rawVal === 'string') {
+            sanitized[key] = sanitizeString(rawVal, 512);
+            continue;
+        }
+        if (typeof rawVal === 'number' && Number.isFinite(rawVal)) {
+            sanitized[key] = rawVal;
+            continue;
+        }
+        if (typeof rawVal === 'boolean') {
+            sanitized[key] = rawVal;
+            continue;
+        }
+        if (rawVal === null) {
+            sanitized[key] = null;
+        }
+    }
+
+    return sanitized;
+}
+
+async function readJsonBody(req, maxBytes = 32 * 1024) {
+    const chunks = [];
+    let totalBytes = 0;
+
+    for await (const chunk of req) {
+        totalBytes += chunk.length;
+        if (totalBytes > maxBytes) {
+            const error = new Error('Request body is too large.');
+            error.statusCode = 413;
+            throw error;
+        }
+        chunks.push(chunk);
+    }
+
+    const raw = Buffer.concat(chunks).toString('utf8').trim();
+    if (!raw) {
+        return {};
+    }
+
+    try {
+        return JSON.parse(raw);
+    } catch (_) {
+        const error = new Error('Invalid JSON body.');
+        error.statusCode = 400;
+        throw error;
+    }
+}
+
+function sanitizeVideoErrorPayload(payload) {
+    const input = payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : {};
+
+    return {
+        url: sanitizeUrl(input.url),
+        reasonCode: sanitizeReasonCode(input.reasonCode),
+        message: sanitizeString(input.message, 1024),
+        context: sanitizeContext(input.context),
+        videoId: sanitizeString(input.videoId, 128),
+        attempt: sanitizeAttempt(input.attempt),
+        timestamp: sanitizeTimestamp(input.timestamp)
+    };
+}
+
+async function appendVideoErrorLog(entry) {
+    const parentDir = path.dirname(VIDEO_ERROR_LOG_PATH);
+    await fs.mkdir(parentDir, { recursive: true });
+    const line = `${JSON.stringify(entry)}\n`;
+    await fs.appendFile(VIDEO_ERROR_LOG_PATH, line, 'utf8');
+}
 
 function sendJson(res, statusCode, body) {
     const payload = JSON.stringify(body);
@@ -1048,8 +1196,38 @@ async function handleStream(req, reqUrl, res) {
     }
 }
 
+async function handleVideoErrors(req, res) {
+    let payload;
+    try {
+        payload = await readJsonBody(req);
+    } catch (error) {
+        const statusCode = Number(error.statusCode) || 400;
+        sendJson(res, statusCode, { error: error.message || 'Invalid JSON body.' });
+        return;
+    }
+
+    const entry = sanitizeVideoErrorPayload(payload);
+
+    try {
+        await appendVideoErrorLog(entry);
+        sendJson(res, 200, { ok: true });
+    } catch (error) {
+        sendJson(res, 500, { error: `Failed to persist video error log: ${error.message}` });
+    }
+}
+
 const server = http.createServer(async (req, res) => {
     const reqUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+
+    if (reqUrl.pathname === '/video-errors') {
+        if (req.method !== 'POST') {
+            sendJson(res, 405, { error: 'Method not allowed.' });
+            return;
+        }
+
+        await handleVideoErrors(req, res);
+        return;
+    }
 
     if (req.method !== 'GET' && req.method !== 'HEAD') {
         sendJson(res, 405, { error: 'Method not allowed.' });

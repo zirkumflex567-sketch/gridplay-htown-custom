@@ -4,11 +4,16 @@
 const http = require('http');
 const { URL } = require('url');
 const { Readable } = require('stream');
+const fs = require('fs/promises');
+const path = require('path');
 const { all: allScrapers, byId: scrapersById } = require('./scrapers');
 const { scoreVideo, htmlDecode } = require('./scrapers/shared');
 
 const HOST = process.env.HOST || '127.0.0.1';
 const PORT = Number(process.env.PORT || 3352);
+const VIDEO_ERROR_LOG_PATH = process.env.VIDEO_ERROR_LOG_PATH_V2
+  ? path.resolve(process.env.VIDEO_ERROR_LOG_PATH_V2)
+  : path.join(__dirname, 'tmp', 'logs', 'video-errors.jsonl');
 
 function sendJson(res, code, body) {
   const payload = JSON.stringify(body);
@@ -21,6 +26,61 @@ async function readJsonBody(req) {
   for await (const chunk of req) chunks.push(chunk);
   const raw = Buffer.concat(chunks).toString('utf8').trim();
   return raw ? JSON.parse(raw) : {};
+}
+
+function sanitizeString(value, maxLength = 2048) {
+  if (typeof value !== 'string') return null;
+  const normalized = value.replace(/[\u0000-\u001f\u007f]/g, ' ').trim();
+  return normalized ? normalized.slice(0, maxLength) : null;
+}
+
+function sanitizeContext(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  const safe = {};
+  for (const [key, val] of Object.entries(value).slice(0, 25)) {
+    const safeKey = sanitizeString(key, 80);
+    if (!safeKey) continue;
+    if (typeof val === 'string') safe[safeKey] = sanitizeString(val, 512);
+    else if (typeof val === 'number' && Number.isFinite(val)) safe[safeKey] = val;
+    else if (typeof val === 'boolean' || val === null) safe[safeKey] = val;
+  }
+  return safe;
+}
+
+function sanitizeVideoErrorPayload(payload) {
+  const input = payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : {};
+  return {
+    url: sanitizeString(input.url, 4096),
+    reasonCode: sanitizeString(input.reasonCode, 64) || 'unknown',
+    message: sanitizeString(input.message, 1024),
+    context: sanitizeContext(input.context),
+    videoId: sanitizeString(input.videoId, 128),
+    attempt: Number.isFinite(Number(input.attempt)) ? Math.max(1, Math.min(20, Math.round(Number(input.attempt)))) : null,
+    timestamp: (() => {
+      const ts = sanitizeString(input.timestamp, 64);
+      const parsed = ts ? new Date(ts) : new Date();
+      return Number.isNaN(parsed.getTime()) ? new Date().toISOString() : parsed.toISOString();
+    })()
+  };
+}
+
+async function handleVideoErrors(req, res) {
+  let body;
+  try {
+    body = await readJsonBody(req);
+  } catch (_) {
+    sendJson(res, 400, { error: 'Invalid JSON body.' });
+    return;
+  }
+
+  const entry = sanitizeVideoErrorPayload(body);
+  try {
+    await fs.mkdir(path.dirname(VIDEO_ERROR_LOG_PATH), { recursive: true });
+    await fs.appendFile(VIDEO_ERROR_LOG_PATH, `${JSON.stringify(entry)}\n`, 'utf8');
+    sendJson(res, 200, { ok: true });
+  } catch (error) {
+    sendJson(res, 500, { error: `Failed to persist video error log: ${error.message}` });
+  }
 }
 
 function validatedHttps(raw) {
@@ -193,6 +253,7 @@ const server = http.createServer(async (req, res) => {
   const reqUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   if (!['GET', 'POST', 'HEAD'].includes(req.method)) return sendJson(res, 405, { error: 'Method not allowed.' });
   if (reqUrl.pathname === '/health') return sendJson(res, 200, { ok: true, service: 'gridplay-api-v2' });
+  if (reqUrl.pathname === '/video-errors' && req.method === 'POST') return handleVideoErrors(req, res);
   if (reqUrl.pathname === '/search' && req.method === 'POST') return handleSearch(req, res);
   if (reqUrl.pathname === '/resolve' && req.method === 'GET') return handleResolve(reqUrl, res);
   if (reqUrl.pathname === '/stream') return handleStream(req, reqUrl, res);

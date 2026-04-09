@@ -9,6 +9,7 @@ const HOST = process.env.HOST || '127.0.0.1';
 const PORT = Number(process.env.PORT || 3350);
 const PMVHAVEN_HOSTS = new Set(['pmvhaven.com', 'www.pmvhaven.com']);
 const MEDIA_HOSTS = new Set(['video.pmvhaven.com']);
+const PLAYLIST_ID_PATH_REGEX = /\/playlists\/([a-f0-9]{24})(?:[/?#]|$)/i;
 
 function sendJson(res, statusCode, body) {
     const payload = JSON.stringify(body);
@@ -162,6 +163,237 @@ function pickBestMediaUrl(html) {
     };
 }
 
+function getPlaylistIdFromUrl(playlistUrl) {
+    const matched = (playlistUrl.pathname || '').match(PLAYLIST_ID_PATH_REGEX);
+    return matched ? matched[1].toLowerCase() : null;
+}
+
+function extractNuxtPayloadArray(html) {
+    const matched = html.match(/<script[^>]*id="__NUXT_DATA__"[^>]*>([\s\S]*?)<\/script>/i);
+    if (!matched || !matched[1]) {
+        return null;
+    }
+
+    try {
+        const parsed = JSON.parse(matched[1]);
+        return Array.isArray(parsed) ? parsed : null;
+    } catch (_) {
+        return null;
+    }
+}
+
+function dereferenceNuxtValue(table, maybeRef) {
+    if (
+        typeof maybeRef === 'number' &&
+        Number.isInteger(maybeRef) &&
+        maybeRef >= 0 &&
+        maybeRef < table.length
+    ) {
+        return table[maybeRef];
+    }
+
+    return maybeRef;
+}
+
+function dereferenceString(table, maybeRef) {
+    const value = dereferenceNuxtValue(table, maybeRef);
+    return typeof value === 'string' ? normalizeEscapes(value) : null;
+}
+
+function pickPreferredMediaFromList(mediaUrlList) {
+    const candidates = [];
+    const seen = new Set();
+
+    for (const rawUrl of mediaUrlList) {
+        if (!rawUrl || typeof rawUrl !== 'string') {
+            continue;
+        }
+
+        try {
+            const parsed = validateUpstreamMediaUrl(rawUrl);
+            const normalized = parsed.toString();
+            if (seen.has(normalized)) {
+                continue;
+            }
+
+            const mediaType = getMediaType(parsed);
+            if (mediaType === 'other') {
+                continue;
+            }
+
+            seen.add(normalized);
+            candidates.push({
+                url: normalized,
+                resolution: extractResolutionFromCandidate(normalized),
+                mediaType,
+                progressiveScore: mediaType === 'mp4' ? 1 : 0
+            });
+        } catch (_) {
+            continue;
+        }
+    }
+
+    if (candidates.length === 0) {
+        return null;
+    }
+
+    candidates.sort((a, b) => {
+        if (b.resolution !== a.resolution) {
+            return b.resolution - a.resolution;
+        }
+        if (b.progressiveScore !== a.progressiveScore) {
+            return b.progressiveScore - a.progressiveScore;
+        }
+        return a.url.localeCompare(b.url);
+    });
+
+    return candidates[0];
+}
+
+function collectPlaylistLinksFromHtml(html) {
+    const normalizedHtml = normalizeEscapes(html);
+    const matches = normalizedHtml.match(/(?:https:\/\/(?:www\.)?pmvhaven\.com)?\/videos?\/[a-zA-Z0-9-]+/gi) || [];
+    const links = [];
+    const seen = new Set();
+
+    for (const rawMatch of matches) {
+        const rawUrl = rawMatch.startsWith('http')
+            ? rawMatch
+            : `https://pmvhaven.com${rawMatch}`;
+
+        try {
+            const parsed = getValidatedHttpsUrl(rawUrl);
+            const host = parsed.hostname.toLowerCase();
+            const path = parsed.pathname || '/';
+            if (!PMVHAVEN_HOSTS.has(host)) {
+                continue;
+            }
+            if (!path.includes('/video/') && !path.includes('/videos/')) {
+                continue;
+            }
+
+            const normalized = `https://pmvhaven.com${path}`;
+            if (seen.has(normalized)) {
+                continue;
+            }
+
+            seen.add(normalized);
+            links.push(normalized);
+        } catch (_) {
+            continue;
+        }
+    }
+
+    return links;
+}
+
+function extractPlaylistItemsFromNuxt(html, playlistUrl) {
+    const playlistId = getPlaylistIdFromUrl(playlistUrl);
+    if (!playlistId) {
+        return [];
+    }
+
+    const table = extractNuxtPayloadArray(html);
+    if (!table) {
+        return [];
+    }
+
+    const stateKey = `playlist-initial-${playlistId}`;
+    let payloadRef = null;
+
+    for (const entry of table) {
+        if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+            continue;
+        }
+        if (Object.prototype.hasOwnProperty.call(entry, stateKey)) {
+            const candidateRef = entry[stateKey];
+            if (typeof candidateRef === 'number' && candidateRef >= 0) {
+                payloadRef = candidateRef;
+                break;
+            }
+        }
+    }
+
+    if (payloadRef === null) {
+        return [];
+    }
+
+    const payload = dereferenceNuxtValue(table, payloadRef);
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+        return [];
+    }
+
+    const playlist = dereferenceNuxtValue(table, payload.playlist);
+    if (!playlist || typeof playlist !== 'object' || Array.isArray(playlist)) {
+        return [];
+    }
+
+    const videoRefs = dereferenceNuxtValue(table, playlist.videos);
+    if (!Array.isArray(videoRefs)) {
+        return [];
+    }
+
+    const videoIds = [];
+    const seenIds = new Set();
+    for (const videoRef of videoRefs) {
+        const id = dereferenceString(table, videoRef);
+        if (!id || !/^[a-f0-9]{24}$/i.test(id)) {
+            continue;
+        }
+        const normalizedId = id.toLowerCase();
+        if (seenIds.has(normalizedId)) {
+            continue;
+        }
+        seenIds.add(normalizedId);
+        videoIds.push(normalizedId);
+    }
+
+    if (videoIds.length === 0) {
+        return [];
+    }
+
+    const detailsById = new Map();
+    const detailRefs = dereferenceNuxtValue(table, playlist.videoDetails);
+    if (Array.isArray(detailRefs)) {
+        for (const detailRef of detailRefs) {
+            const detail = dereferenceNuxtValue(table, detailRef);
+            if (!detail || typeof detail !== 'object' || Array.isArray(detail)) {
+                continue;
+            }
+
+            const id = dereferenceString(table, detail._id);
+            if (!id || !/^[a-f0-9]{24}$/i.test(id)) {
+                continue;
+            }
+
+            detailsById.set(id.toLowerCase(), {
+                title: dereferenceString(table, detail.title),
+                videoUrl: dereferenceString(table, detail.videoUrl),
+                hlsMasterPlaylistUrl: dereferenceString(table, detail.hlsMasterPlaylistUrl)
+            });
+        }
+    }
+
+    return videoIds.map(id => {
+        const detail = detailsById.get(id) || null;
+        const preferred = detail
+            ? pickPreferredMediaFromList([detail.videoUrl, detail.hlsMasterPlaylistUrl])
+            : null;
+        const mediaUrl = preferred ? preferred.url : null;
+
+        return {
+            id,
+            title: detail && detail.title ? detail.title : null,
+            pageUrl: `https://pmvhaven.com/videos/${id}`,
+            mediaUrl,
+            streamUrl: mediaUrl
+                ? `/gridplay-api/stream?url=${encodeURIComponent(mediaUrl)}`
+                : null,
+            mediaType: preferred ? preferred.mediaType : null
+        };
+    });
+}
+
 async function handleResolve(reqUrl, res) {
     let pageUrl;
     try {
@@ -227,16 +459,27 @@ async function handlePlaylist(reqUrl, res) {
         }
 
         const html = await upstream.text();
-        const videoLinkRegex = /\/video\/([a-zA-Z0-9-]+)/g;
-        const links = new Set();
-        let match;
-        while ((match = videoLinkRegex.exec(html)) !== null) {
-            links.add(`https://pmvhaven.com/video/${match[1]}`);
-        }
+        const extractedItems = extractPlaylistItemsFromNuxt(html, playlistUrl);
+        const items = extractedItems.length > 0
+            ? extractedItems
+            : collectPlaylistLinksFromHtml(html).map(pageUrl => ({
+                id: null,
+                title: null,
+                pageUrl,
+                mediaUrl: null,
+                streamUrl: null,
+                mediaType: null
+            }));
 
         sendJson(res, 200, {
             playlistUrl: playlistUrl.toString(),
-            links: Array.from(links)
+            links: items.map(item => item.pageUrl),
+            streamLinks: items
+                .filter(item => typeof item.streamUrl === 'string')
+                .map(item => item.streamUrl),
+            count: items.length,
+            resolvedCount: items.filter(item => typeof item.streamUrl === 'string').length,
+            items
         });
     } catch (error) {
         sendJson(res, 502, { error: `Playlist extraction failed: ${error.message}` });

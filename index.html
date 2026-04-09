@@ -797,6 +797,14 @@
             return payload;
         }
 
+        function toAbsoluteStreamUrl(streamUrl) {
+            try {
+                return new URL(streamUrl, window.location.origin).toString();
+            } catch (_) {
+                return streamUrl;
+            }
+        }
+
         async function addVideoWithResolution(src, name = null) {
             if (!isPmvhavenVideoUrl(src)) {
                 addVideo(src, name);
@@ -1303,7 +1311,7 @@
             const urlInput = document.getElementById('playlistUrlInput');
             const resultsArea = document.getElementById('playlistResults');
             const url = urlInput.value.trim();
-            
+
             if (!url || !isValidUrl(url)) {
                 showNotification('Please enter a valid playlist URL', 'warning');
                 return;
@@ -1320,15 +1328,38 @@
 
                 if (!response.ok) throw new Error(data.error || 'Failed to extract playlist');
 
-                if (data.links && data.links.length > 0) {
+                const items = Array.isArray(data.items) ? data.items : [];
+                if (items.length > 0) {
+                    extractedPlaylistItems = items;
+                    extractedLinks = items
+                        .map(item => item && item.pageUrl)
+                        .filter(link => typeof link === 'string' && isValidUrl(link));
+                    resolvedLinks = items
+                        .map(item => item && item.streamUrl)
+                        .filter(link => typeof link === 'string' && link.includes('/stream?url='))
+                        .map(toAbsoluteStreamUrl);
+
+                    const unresolvedCount = Math.max(0, extractedLinks.length - resolvedLinks.length);
+                    resultsArea.value = (resolvedLinks.length > 0 ? resolvedLinks : extractedLinks).join('\n');
+                    showNotification(`Found ${items.length} items (${resolvedLinks.length} direct links ready)`);
+
+                    document.getElementById('resolveAllBtn').disabled = unresolvedCount === 0;
+                    document.getElementById('copyLinksBtn').disabled = false;
+                    document.getElementById('addAllBtn').disabled = false;
+                } else if (data.links && data.links.length > 0) {
+                    extractedPlaylistItems = data.links.map(link => ({ pageUrl: link, streamUrl: null }));
                     extractedLinks = data.links;
+                    resolvedLinks = [];
                     resultsArea.value = data.links.join('\n');
                     showNotification(`Found ${data.links.length} video links!`);
-                    
+
                     document.getElementById('resolveAllBtn').disabled = false;
                     document.getElementById('copyLinksBtn').disabled = false;
                     document.getElementById('addAllBtn').disabled = false;
                 } else {
+                    extractedPlaylistItems = [];
+                    extractedLinks = [];
+                    resolvedLinks = [];
                     resultsArea.value = 'No video links found in this playlist.';
                 }
             } catch (error) {
@@ -1337,6 +1368,7 @@
             }
         }
 
+        let extractedPlaylistItems = [];
         let extractedLinks = [];
         let resolvedLinks = [];
 
@@ -1346,33 +1378,44 @@
             const resultsArea = document.getElementById('playlistResults');
             const progress = document.getElementById('extractionProgress');
             const fill = document.getElementById('progressFill');
-            
+
+            const linksNeedingResolve = extractedPlaylistItems
+                .filter(item => !item || !item.streamUrl)
+                .map(item => item && item.pageUrl)
+                .filter(link => typeof link === 'string');
+
+            if (linksNeedingResolve.length === 0) {
+                resultsArea.value = resolvedLinks.join('\n');
+                document.getElementById('resolveAllBtn').disabled = true;
+                showNotification(`All direct links are already ready (${resolvedLinks.length}).`);
+                return;
+            }
+
             progress.style.display = 'block';
-            resolvedLinks = [];
             resultsArea.value = 'Resolving direct links (this may take a while)...\n\n';
-            
             document.getElementById('resolveAllBtn').disabled = true;
-            
-            for (let i = 0; i < extractedLinks.length; i++) {
-                const link = extractedLinks[i];
-                const percentage = ((i + 1) / extractedLinks.length) * 100;
+
+            const resolvedSet = new Set(resolvedLinks);
+            for (let i = 0; i < linksNeedingResolve.length; i++) {
+                const link = linksNeedingResolve[i];
+                const percentage = ((i + 1) / linksNeedingResolve.length) * 100;
                 fill.style.width = `${percentage}%`;
 
                 try {
                     const resolved = await resolvePmvhavenUrl(link);
                     if (resolved && resolved.streamUrl) {
-                        const directLink = window.location.origin + resolved.streamUrl;
-                        resolvedLinks.push(directLink);
+                        const directLink = toAbsoluteStreamUrl(resolved.streamUrl);
+                        resolvedSet.add(directLink);
                         resultsArea.value += `${directLink}\n`;
                     }
                 } catch (error) {
                     resultsArea.value += `Failed: ${link}\n`;
                 }
-                
-                // Small delay to be respectful
+
                 await new Promise(r => setTimeout(r, 500));
             }
-            
+
+            resolvedLinks = Array.from(resolvedSet);
             showNotification(`Resolution complete! ${resolvedLinks.length} direct links found.`);
             setTimeout(() => { progress.style.display = 'none'; fill.style.width = '0%'; }, 1000);
         }
@@ -1390,6 +1433,7 @@
             document.getElementById('resolveAllBtn').disabled = true;
             document.getElementById('copyLinksBtn').disabled = true;
             document.getElementById('addAllBtn').disabled = true;
+            extractedPlaylistItems = [];
             extractedLinks = [];
             resolvedLinks = [];
         }

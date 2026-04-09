@@ -154,3 +154,9 @@
   - `docs/screenshots/live-v3-wave6/03-global-playlist-module.png`
   - `docs/screenshots/live-v3-wave6/04-tile-menu-open.png`
   - `docs/screenshots/live-v3-wave6/README.md`
+
+## Backend Admin Log Wave (video error inspection)
+
+- **Timestamp:** 2026-04-09T16:56:39+02:00
+- **Scope:** Added backend video error log inspection endpoints by exposing JSON list retrieval (`GET /video-errors`) and an admin HTML table view (`GET /admin/logs`) backed by the same JSONL telemetry file used by `POST /video-errors`.
+- **Notes:** Missing log files now return empty results, malformed JSONL lines are skipped safely, and list retrieval supports clamped `limit` query handling for recent-entry inspection.

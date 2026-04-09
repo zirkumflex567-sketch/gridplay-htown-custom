@@ -120,3 +120,62 @@ test('video-errors endpoint rejects malformed JSON body', async () => {
         await fs.rm(logPath, { force: true });
     }
 });
+
+test('video-errors list endpoint returns recent valid items with limit clamping', async () => {
+    const port = 5100 + Math.floor(Math.random() * 200);
+    const logPath = path.join(os.tmpdir(), `gridplay-video-errors-${Date.now()}-${Math.random()}.jsonl`);
+    const serverProcess = await startServer(port, logPath);
+
+    try {
+        const emptyResponse = await fetch(`http://127.0.0.1:${port}/video-errors`);
+        assert.equal(emptyResponse.status, 200);
+        const emptyPayload = await emptyResponse.json();
+        assert.equal(emptyPayload.ok, true);
+        assert.equal(emptyPayload.count, 0);
+        assert.deepEqual(emptyPayload.items, []);
+
+        const firstEntry = {
+            timestamp: '2026-04-09T16:00:00.000Z',
+            reasonCode: 'startup-timeout',
+            url: 'https://example.com/one.mp4',
+            videoId: 'video-1',
+            attempt: 1,
+            message: 'First message'
+        };
+        const secondEntry = {
+            timestamp: '2026-04-09T16:01:00.000Z',
+            reasonCode: 'network-fail',
+            url: 'https://example.com/two.mp4',
+            videoId: 'video-2',
+            attempt: 2,
+            message: 'Second message'
+        };
+
+        const rawJsonl = [
+            JSON.stringify(firstEntry),
+            '{this-is-not-json}',
+            JSON.stringify(secondEntry)
+        ].join('\n');
+        await fs.writeFile(logPath, `${rawJsonl}\n`, 'utf8');
+
+        const limitedResponse = await fetch(`http://127.0.0.1:${port}/video-errors?limit=0`);
+        assert.equal(limitedResponse.status, 200);
+        const limitedPayload = await limitedResponse.json();
+        assert.equal(limitedPayload.ok, true);
+        assert.equal(limitedPayload.count, 1);
+        assert.equal(limitedPayload.items.length, 1);
+        assert.equal(limitedPayload.items[0].videoId, secondEntry.videoId);
+
+        const fullResponse = await fetch(`http://127.0.0.1:${port}/video-errors?limit=5000`);
+        assert.equal(fullResponse.status, 200);
+        const fullPayload = await fullResponse.json();
+        assert.equal(fullPayload.ok, true);
+        assert.equal(fullPayload.count, 2);
+        assert.equal(fullPayload.items.length, 2);
+        assert.equal(fullPayload.items[0].videoId, secondEntry.videoId);
+        assert.equal(fullPayload.items[1].videoId, firstEntry.videoId);
+    } finally {
+        await stopServer(serverProcess);
+        await fs.rm(logPath, { force: true });
+    }
+});

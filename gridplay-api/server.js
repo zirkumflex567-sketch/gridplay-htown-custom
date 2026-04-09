@@ -185,6 +185,108 @@ async function appendVideoErrorLog(entry) {
     await fs.appendFile(VIDEO_ERROR_LOG_PATH, line, 'utf8');
 }
 
+function parseVideoErrorLimit(rawLimit) {
+    const parsed = Number(rawLimit);
+    if (!Number.isFinite(parsed)) {
+        return 100;
+    }
+    const rounded = Math.round(parsed);
+    return Math.max(1, Math.min(500, rounded));
+}
+
+async function readVideoErrorLogEntries(limit = 100) {
+    let content;
+    try {
+        content = await fs.readFile(VIDEO_ERROR_LOG_PATH, 'utf8');
+    } catch (error) {
+        if (error && error.code === 'ENOENT') {
+            return [];
+        }
+        throw error;
+    }
+
+    const lines = content.split(/\r?\n/);
+    const parsed = [];
+    for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) {
+            continue;
+        }
+
+        try {
+            const item = JSON.parse(trimmed);
+            if (item && typeof item === 'object' && !Array.isArray(item)) {
+                parsed.push(item);
+            }
+        } catch (_) {
+            continue;
+        }
+    }
+
+    if (parsed.length <= limit) {
+        return parsed.reverse();
+    }
+
+    return parsed.slice(parsed.length - limit).reverse();
+}
+
+function escapeHtml(value) {
+    return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function sendHtml(res, statusCode, html) {
+    const payload = Buffer.from(html, 'utf8');
+    res.writeHead(statusCode, {
+        'Content-Type': 'text/html; charset=utf-8',
+        'Cache-Control': 'no-store',
+        'Content-Length': payload.length
+    });
+    res.end(payload);
+}
+
+function renderAdminLogsHtml(items) {
+    const rows = items.map(item => {
+        const timestamp = escapeHtml(item.timestamp || '');
+        const reasonCode = escapeHtml(item.reasonCode || '');
+        const url = escapeHtml(item.url || '');
+        const videoId = escapeHtml(item.videoId || '');
+        const attempt = escapeHtml(item.attempt == null ? '' : item.attempt);
+        const message = escapeHtml(item.message || '');
+        return `<tr><td>${timestamp}</td><td>${reasonCode}</td><td>${url}</td><td>${videoId}</td><td>${attempt}</td><td>${message}</td></tr>`;
+    }).join('');
+
+    return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GridPlay Video Error Logs</title>
+<style>
+body { font-family: sans-serif; margin: 16px; }
+table { border-collapse: collapse; width: 100%; table-layout: fixed; }
+th, td { border: 1px solid #d1d5db; text-align: left; padding: 8px; vertical-align: top; word-break: break-word; }
+th { background: #f3f4f6; }
+tbody tr:nth-child(odd) { background: #fafafa; }
+</style>
+</head>
+<body>
+<h1>Video Error Logs</h1>
+<p>Showing ${items.length} recent entries.</p>
+<table>
+<thead>
+<tr><th>timestamp</th><th>reasonCode</th><th>url</th><th>videoId</th><th>attempt</th><th>message</th></tr>
+</thead>
+<tbody>${rows}</tbody>
+</table>
+</body>
+</html>`;
+}
+
 function sendJson(res, statusCode, body) {
     const payload = JSON.stringify(body);
     res.writeHead(statusCode, {
@@ -1216,16 +1318,56 @@ async function handleVideoErrors(req, res) {
     }
 }
 
+async function handleVideoErrorsList(reqUrl, res) {
+    const limit = parseVideoErrorLimit(reqUrl.searchParams.get('limit'));
+
+    try {
+        const items = await readVideoErrorLogEntries(limit);
+        sendJson(res, 200, {
+            ok: true,
+            count: items.length,
+            items
+        });
+    } catch (error) {
+        sendJson(res, 500, { error: `Failed to read video error logs: ${error.message}` });
+    }
+}
+
+async function handleAdminLogs(reqUrl, res) {
+    const limit = parseVideoErrorLimit(reqUrl.searchParams.get('limit'));
+
+    try {
+        const items = await readVideoErrorLogEntries(limit);
+        const html = renderAdminLogsHtml(items);
+        sendHtml(res, 200, html);
+    } catch (error) {
+        sendHtml(res, 500, '<!doctype html><html><body><h1>Failed to read logs</h1></body></html>');
+    }
+}
+
 const server = http.createServer(async (req, res) => {
     const reqUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
 
     if (reqUrl.pathname === '/video-errors') {
-        if (req.method !== 'POST') {
-            sendJson(res, 405, { error: 'Method not allowed.' });
+        if (req.method === 'POST') {
+            await handleVideoErrors(req, res);
+            return;
+        }
+        if (req.method === 'GET') {
+            await handleVideoErrorsList(reqUrl, res);
             return;
         }
 
-        await handleVideoErrors(req, res);
+        sendJson(res, 405, { error: 'Method not allowed.' });
+        return;
+    }
+
+    if (reqUrl.pathname === '/admin/logs') {
+        if (req.method === 'GET') {
+            await handleAdminLogs(reqUrl, res);
+            return;
+        }
+        sendJson(res, 405, { error: 'Method not allowed.' });
         return;
     }
 

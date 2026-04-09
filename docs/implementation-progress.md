@@ -176,3 +176,9 @@
   - `docs/screenshots/live-v3-wave7/test-results.json`
   - `docs/screenshots/live-v3-wave7/README.md`
   - `docs/screenshots/live-v3-wave7/run-live-v3-wave7.mjs`
+
+## Adversarial Bughunt Findings (V3)
+
+- **Timestamp:** 2026-04-09T17:36:44+02:00
+- Evidence and repro notes: `docs/screenshots/live-v3-bughunt/README.md`
+- Curated screenshots: `docs/screenshots/live-v3-bughunt/`

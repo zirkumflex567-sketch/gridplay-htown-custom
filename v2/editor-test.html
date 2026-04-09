@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Playlist Editor Sandbox</title>
+  <link rel="stylesheet" href="playlist-editor.css">
+  <style>
+    body { font-family: sans-serif; background: #0a0a0c; color: #fff; padding: 20px; }
+    .sandbox-panel { background: #1a1a24; padding: 20px; border-radius: 8px; margin-top: 20px; max-width: 600px; }
+    video { width: 100%; max-width: 600px; background: #000; display: block; margin-top: 20px;}
+    button.mock-btn { background: #0a84ff; border: none; padding: 10px 15px; color: #fff; border-radius: 6px; cursor: pointer; margin-top:10px; }
+    h2 { margin-top:0; font-size:18px; color: #e5a00d; }
+  </style>
+</head>
+<body>
+
+  <h1>Sandbox: Playlist Editor</h1>
+  <p>Hier testen wir den Editor völlig abgekapselt vom Live-System!</p>
+
+  <div class="sandbox-panel">
+    <h2>Global State Simulation</h2>
+    <p>Simulierte Live Queue-Einträge: <span id="queue-length">0</span></p>
+    <button class="mock-btn" id="open-editor-btn">Offiziellen Editor öffnen</button>
+  </div>
+
+  <video id="mock-player" controls></video>
+
+  <!-- Laden wir das eigentliche Modul -->
+  <script src="playlist-editor.js"></script>
+  
+  <script>
+    // Globale Variablen wie im Original-System
+    window.queue = [];
+    window.index = 0;
+    const player = document.getElementById('mock-player');
+
+    // Initiale Dummy-Daten ins Editor-Modul laden
+    const initData = [
+      { url: 'https://www.w3schools.com/html/mov_bbb.mp4', title: 'Big Buck Bunny Test', views: 5000, rating: 95, source: 'Sandbox' },
+      { url: 'https://test-videos.co.uk/vids/bigbuckbunny/mp4/h264/360/Big_Buck_Bunny_360_10s_1MB.mp4', title: 'Test Video 2', views: 250, rating: 70, source: 'Dummy' }
+    ];
+
+    if (window.PlaylistEditor) {
+      // Editor mit Daten füttern
+      window.PlaylistEditor.setQueue(initData, 0);
+
+      // Den Hook bedienen: Wenn der Editor intern was ändert, hier empfangen
+      window.PlaylistEditor.onQueueChange = (newQueue) => {
+        window.queue = newQueue;
+        document.getElementById('queue-length').textContent = window.queue.length;
+        console.log("Global queue wurde vom Editor aktualisiert!", window.queue);
+        
+        // Simuliere Playback-Update
+        if (window.queue.length > 0 && player.src === '') {
+           player.src = window.queue[0].url;
+           window.PlaylistEditor.updatePlaybackState(0);
+        }
+      };
+
+      // Button Event binden
+      document.getElementById('open-editor-btn').addEventListener('click', () => {
+        window.PlaylistEditor.toggleEditor(true);
+      });
+      
+      // Initiale Längen-Anzeige
+      window.PlaylistEditor.notifyChange(); 
+    }
+  </script>
+</body>
+</html>

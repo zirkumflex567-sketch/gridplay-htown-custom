@@ -78,15 +78,25 @@ class PlaylistEditorClass {
     this.els.addBtn.addEventListener('click', () => {
       const val = this.els.linkInput.value.trim();
       if (!val) return;
-      const urls = val.split(/\\s+/).filter(Boolean);
-      this.addItems(urls.map(u => ({
-        url: u,
-        title: 'Custom Link',
-        source: 'Manual',
-        views: 0,
-        rating: 0
-      })));
-      this.els.linkInput.value = '';
+      
+      const originalText = this.els.addBtn.textContent;
+      this.els.addBtn.textContent = 'Lädt...';
+      this.els.addBtn.disabled = true;
+
+      // Simulate a small loading task so user knows "task started"
+      setTimeout(() => {
+        const urls = val.split(/\\s+/).filter(Boolean);
+        this.addItems(urls.map(u => ({
+          url: u,
+          title: 'Custom Link',
+          source: 'Manuell',
+          views: 0,
+          rating: 0
+        })));
+        this.els.linkInput.value = '';
+        this.els.addBtn.textContent = originalText;
+        this.els.addBtn.disabled = false;
+      }, 400);
     });
 
     this.els.clearBtn.addEventListener('click', () => {
@@ -205,9 +215,9 @@ class PlaylistEditorClass {
         <div class="pe-item-content">
           <div class="pe-item-title">\${item.title || item.url || 'Unknown Track'}</div>
           <div class="pe-item-meta">
-            \${item.source ? \`<span>Source: \${item.source}</span>\` : ''}
-            \${item.views ? \`<span>Plays: \${item.views}</span>\` : ''}
-            \${item.rating ? \`<span>Rating: \${item.rating}%</span>\` : ''}
+            \${item.source ? \`<span>Quelle: \${item.source}</span>\` : ''}
+            \${item.views ? \`<span>Aufrufe: \${item.views}</span>\` : ''}
+            \${item.rating ? \`<span>Bewertung: \${item.rating}%</span>\` : ''}
           </div>
         </div>
         <button class="pe-item-remove" data-index="\${i}">Remove</button>

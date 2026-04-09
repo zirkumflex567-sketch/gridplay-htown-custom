@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GridPlay v2 Search</title>
+  <link rel="stylesheet" href="playlist-editor.css">
+  <style>
+    body { margin: 0; font-family: Arial, sans-serif; background: #101418; color: #e8edf2; }
+    .wrap { display: grid; grid-template-columns: 420px 1fr; min-height: 100vh; }
+    .left { padding: 16px; border-right: 1px solid #2a323c; overflow: auto; }
+    .right { padding: 16px; }
+    input, textarea, button { width: 100%; box-sizing: border-box; margin-bottom: 10px; padding: 10px; border-radius: 6px; border: 1px solid #394350; background: #1a222c; color: #e8edf2; }
+    button { background: #0a84ff; border: 0; cursor: pointer; }
+    .sites { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 12px; }
+    .site { font-size: 13px; display: flex; align-items: center; gap: 6px; }
+    .result { padding: 8px; border: 1px solid #2f3945; border-radius: 6px; margin-bottom: 8px; }
+    .meta { color: #9fb0c2; font-size: 12px; }
+    video { width: 100%; max-height: 60vh; background: #000; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="left">
+      <h2>GridPlay v2</h2>
+      <input id="query" placeholder="Search term">
+      <div class="sites" id="sites"></div>
+      <input id="minViews" type="number" value="50000" placeholder="Min views">
+      <input id="minRating" type="number" value="80" placeholder="Min rating %">
+      <input id="pages" type="number" value="2" placeholder="Pages per site">
+      <button onclick="runSearch()">Search + Build List</button>
+      <textarea id="playlist" rows="10" placeholder="Generated playable links"></textarea>
+      <button onclick="startLoop()">Start Endless Playlist</button>
+    </div>
+    <div class="right">
+      <video id="player" controls autoplay muted playsinline></video>
+      <p id="status"></p>
+      <div id="results"></div>
+    </div>
+  </div>
+
+  <script src="playlist-editor.js"></script>
+  <script>
+    const API = '/gridplay-api-v2';
+    const defaultSites = ['pmvhaven', 'xvideos', 'xhamster', 'youporn', 'fuq', 'eporner', 'hqporner', 'tnaflix'];
+    const sitesEl = document.getElementById('sites');
+    defaultSites.forEach((site) => {
+      const row = document.createElement('label');
+      row.className = 'site';
+      row.innerHTML = `<input type="checkbox" value="${site}" checked> ${site}`;
+      sitesEl.appendChild(row);
+    });
+
+    const player = document.getElementById('player');
+    let queue = [];
+    let index = 0;
+
+    function selectedSites() {
+      return [...document.querySelectorAll('#sites input:checked')].map((i) => i.value);
+    }
+
+    async function runSearch() {
+      const body = {
+        query: document.getElementById('query').value.trim(),
+        sites: selectedSites(),
+        minViews: Number(document.getElementById('minViews').value || 50000),
+        minRating: Number(document.getElementById('minRating').value || 80),
+        pages: Number(document.getElementById('pages').value || 2),
+        limit: 300
+      };
+      const res = await fetch(`${API}/search`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'search failed');
+
+      const out = [];
+      const render = [];
+      for (const item of data.results) {
+        try {
+          const r = await fetch(`${API}/resolve?url=${encodeURIComponent(item.pageUrl)}`);
+          const resolved = await r.json();
+          if (r.ok && resolved.streamUrl) {
+            const streamUrlStr = location.origin + resolved.streamUrl;
+            out.push({
+              url: streamUrlStr,
+              title: item.title,
+              source: item.source,
+              views: item.views,
+              rating: item.rating
+            });
+            render.push(`<div class="result"><div>${item.title}</div><div class="meta">${item.source} | ${item.views} views | ${item.rating}%</div></div>`);
+          }
+        } catch (_) {}
+      }
+
+      queue = out;
+      index = 0;
+      document.getElementById('playlist').value = out.map(o => o.url).join('\n');
+      document.getElementById('results').innerHTML = render.join('');
+      document.getElementById('status').textContent = `Results: ${out.length}`;
+      if (window.PlaylistEditor) { window.PlaylistEditor.setQueue(queue, index); }
+    }
+
+    function startLoop() {
+      const raw = document.getElementById('playlist').value.trim();
+      const newUrls = raw ? raw.split(/\s+/).filter(Boolean) : [];
+      if (newUrls.length) {
+        queue = newUrls.map(u => {
+          const existing = queue.find(q => (q.url || q) === u);
+          return existing || { url: u, title: 'Custom Link', source: 'Manual', views: 0, rating: 0 };
+        });
+      } else {
+        queue = [];
+      }
+      index = 0;
+      if (!queue.length) return;
+      if (window.PlaylistEditor) { window.PlaylistEditor.setQueue(queue, index); }
+      playCurrent();
+    }
+
+    function playCurrent() {
+      if (!queue.length) return;
+      const currentItem = queue[index % queue.length];
+      player.src = typeof currentItem === 'object' ? currentItem.url : currentItem;
+      player.play().catch(() => {});
+      document.getElementById('status').textContent = `Playing ${index % queue.length + 1}/${queue.length}`;
+      if (window.PlaylistEditor) { window.PlaylistEditor.updatePlaybackState(index); }
+    }
+
+    player.addEventListener('ended', () => { index += 1; playCurrent(); });
+    player.addEventListener('error', () => { index += 1; playCurrent(); });
+
+    if (window.PlaylistEditor) {
+      window.PlaylistEditor.onQueueChange = (newQueue) => {
+        queue = newQueue;
+        document.getElementById('playlist').value = queue.map(q => q.url).join('\n');
+        document.getElementById('status').textContent = `Results: ${queue.length}`;
+        // If nothing is playing but we added items, don't auto play unless user hits button -> or maybe auto play if index=0
+      };
+    }
+  </script>
+</body>
+</html>

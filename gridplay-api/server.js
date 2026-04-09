@@ -546,6 +546,9 @@ async function handleStream(req, reqUrl, res) {
         if (isM3u8 && req.method !== 'HEAD' && upstream.body) {
             const body = await upstream.text();
             
+            // Critical: Use the final URL after redirects as the base for resolving relative paths
+            const baseUrl = upstream.url;
+            
             // 1. Rewrite absolute/relative URIs on standalone lines
             // 2. Rewrite URIs inside tags like URI="path/to/segment"
             const lines = body.split('\n');
@@ -557,7 +560,7 @@ async function handleStream(req, reqUrl, res) {
                 if (trimmed.startsWith('#')) {
                     return line.replace(/URI="([^"]+)"/g, (match, p1) => {
                         try {
-                            const abs = new URL(p1, mediaUrl).toString();
+                            const abs = new URL(p1, baseUrl).toString();
                             return `URI="/gridplay-api/stream?url=${encodeURIComponent(abs)}"`;
                         } catch (e) {
                             return match;
@@ -567,7 +570,7 @@ async function handleStream(req, reqUrl, res) {
 
                 // Handle standalone URI lines
                 try {
-                    const absoluteUrl = new URL(trimmed, mediaUrl).toString();
+                    const absoluteUrl = new URL(trimmed, baseUrl).toString();
                     return `/gridplay-api/stream?url=${encodeURIComponent(absoluteUrl)}`;
                 } catch (e) {
                     return line;

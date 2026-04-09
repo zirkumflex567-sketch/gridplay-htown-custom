@@ -108,10 +108,10 @@ async function handleSearch(req, res) {
 
   const errors = [];
 
-  const resultsPerSite = new Map();
+  const sortedResultsPerSite = new Map();
   for (const siteId of selectedSites) {
     const scraper = scrapersById.get(siteId);
-    const siteCandidates = [];
+    let siteCandidates = [];
     for (let page = 1; page <= pages; page += 1) {
       try {
         const searchUrl = scraper.buildSearchUrl(query, page);
@@ -121,30 +121,36 @@ async function handleSearch(req, res) {
         errors.push({ site: siteId, page, error: error.message });
       }
     }
-    resultsPerSite.set(siteId, siteCandidates);
+
+    // Deduplicate per site
+    const siteDedup = new Map();
+    for (const entry of siteCandidates) {
+      if (!siteDedup.has(entry.pageUrl)) siteDedup.set(entry.pageUrl, entry);
+    }
+
+    // Filter, Score, and Sort within the site
+    const siteResults = [...siteDedup.values()]
+      .map(entry => ({ ...entry, score: scoreVideo(entry, minViews, minRating, minDuration) }))
+      .filter(entry => entry.score >= 0)
+      .sort((a, b) => b.score - a.score);
+
+    sortedResultsPerSite.set(siteId, siteResults);
   }
 
-  // Interleaving Results (Provider Balancing)
-  const candidates = [];
-  const maxPerSite = Math.max(...Array.from(resultsPerSite.values()).map(r => r.length));
+  // Interleaving Results (Provider Balancing) - True Fair Mix
+  const results = [];
+  const maxPerSite = Math.max(...Array.from(sortedResultsPerSite.values()).map(r => r.length), 0);
+  
   for (let i = 0; i < maxPerSite; i++) {
     for (const siteId of selectedSites) {
-      const list = resultsPerSite.get(siteId);
-      if (list && list[i]) candidates.push(list[i]);
+      const list = sortedResultsPerSite.get(siteId);
+      if (list && list[i]) {
+        results.push(list[i]);
+      }
+      if (results.length >= limit) break;
     }
+    if (results.length >= limit) break;
   }
-
-  const dedup = new Map();
-  for (const candidate of candidates) {
-    const current = dedup.get(candidate.pageUrl);
-    if (!current || scoreVideo(candidate, 0, 0, 0) > scoreVideo(current, 0, 0, 0)) dedup.set(candidate.pageUrl, candidate);
-  }
-
-  const results = [...dedup.values()]
-    .map((entry) => ({ ...entry, score: scoreVideo(entry, minViews, minRating, minDuration) }))
-    .filter((entry) => entry.score >= 0)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, limit);
 
   sendJson(res, 200, { query, selectedSites, filters: { minViews, minRating, pages, limit }, availableSites: allScrapers.map((s) => s.id), count: results.length, results, errors });
 }

@@ -25,6 +25,9 @@ A powerful, intuitive multi-video grid player that lets you watch multiple video
 - **Auto-muted start** - no audio chaos when loading multiple videos
 - **Closed captions** enabled by default when available
 - **Save/Load configurations** - preserve your video setups
+- **Global Search module (v2)** - search across multiple sites (PMVHaven, XVideos, etc.) and add results directly to the grid
+- **Playlist Editor (v2)** - manage, reorder, and preview your video queues with a dedicated glassmorphism UI
+- **GridPlay API v2** - robust, JIT (Just-in-Time) video resolution and scraping for high-quality playback
 - **Tile playlist queue** - paste multiple links and play them sequentially in one selected tile
 - **PAWG PMV Auto Mix module** - generate PMVHaven-priority playlists with optional endless loop per tile
 - **Hide/show controls bar** - quick near-fullscreen workspace toggle
@@ -102,8 +105,9 @@ Direct Videos:
 The customized production deployment uses a dedicated GitHub repo and a polling auto-deploy timer on htown.
 
 - Source of truth: the customized GridPlay GitHub repository
-- Deployment target: static app under nginx `/gridplay` and API under `/gridplay-api`
+- Deployment target: static app under nginx `/gridplay` and API under `/gridplay-api` (v1) and `/gridplay-api-v2` (v2)
 - Automation: a systemd `oneshot` service triggered by a systemd timer every minute
+- V2 API: Specifically designed for high-concurrency JIT resolution and multi-site scraping.
 
 Recommended operational flow:
 

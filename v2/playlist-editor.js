@@ -57,18 +57,7 @@ class PlaylistEditorClass {
       statusUpcoming: document.getElementById('pe-status-upcoming-list')
     };
 
-    // Add toggle button to original UI
-    const toggleBtn = document.createElement('button');
-    toggleBtn.textContent = 'Open Playlist Editor';
-    toggleBtn.style.marginTop = '10px';
-    toggleBtn.style.background = '#e5a00d'; // distinctive color
-    toggleBtn.style.color = '#fff';
-    toggleBtn.onclick = () => this.toggleEditor();
-
-    const leftPanel = document.querySelector('.left');
-    if (leftPanel) {
-      leftPanel.appendChild(toggleBtn);
-    }
+    // Note: Toggle button is now integrated directly in index.html
   }
 
   bindEvents() {

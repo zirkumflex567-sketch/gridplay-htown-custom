@@ -491,6 +491,7 @@
                 <button class="btn" onclick="togglePlaylistModule()" style="background: #6c5ce7;">Playlist Extractor</button>
                 <button class="btn" onclick="toggleBulkModule()" style="background: #20bf6b;">Bulk Import / Tabs</button>
                 <button class="btn" onclick="togglePawgMixModule()" style="background: #8e44ad;">Generate PAWG Mix</button>
+                <button class="btn" onclick="toggleSearchPlaylistModule()" style="background: #1abc9c;">Search Playlist v2</button>
                 <button class="btn" onclick="toggleGlobalPlaylistModule()" style="background: #e67e22;">Global Playlist</button>
                 <button class="btn" onclick="saveConfig()">Save Config</button>
                 <button class="btn" onclick="loadConfig()">Load Config</button>
@@ -634,6 +635,56 @@
             </div>
         </div>
 
+        <div class="module-container" id="searchPlaylistModule">
+            <div class="module-glass">
+                <div class="module-header">
+                    <h3>Multi-Provider Search Playlist (v2)</h3>
+                    <button class="close-btn" onclick="toggleSearchPlaylistModule()">×</button>
+                </div>
+                <div class="module-content">
+                    <div class="module-grid">
+                        <div class="module-field full">
+                            <label for="searchV2Query">Search Query</label>
+                            <input id="searchV2Query" class="module-input" type="text" placeholder="Enter keywords..." style="margin-bottom: 0;">
+                        </div>
+                        <div class="module-field">
+                            <label for="searchV2MinViews">Min Views</label>
+                            <input id="searchV2MinViews" class="module-input" type="number" min="0" value="50000" style="margin-bottom: 0;">
+                        </div>
+                        <div class="module-field">
+                            <label for="searchV2MinRating">Min Rating</label>
+                            <input id="searchV2MinRating" class="module-input" type="number" min="0" max="100" value="80" style="margin-bottom: 0;">
+                        </div>
+                        <div class="module-field">
+                            <label for="searchV2Pages">Pages</label>
+                            <input id="searchV2Pages" class="module-input" type="number" min="1" max="10" value="2" style="margin-bottom: 0;">
+                        </div>
+                        <div class="module-field full">
+                            <label>Providers</label>
+                            <div style="display:grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px;">
+                                <label class="module-switch"><input id="searchV2Site-pmvhaven" type="checkbox" checked><span>pmvhaven</span></label>
+                                <label class="module-switch"><input id="searchV2Site-xvideos" type="checkbox" checked><span>xvideos</span></label>
+                                <label class="module-switch"><input id="searchV2Site-xhamster" type="checkbox" checked><span>xhamster</span></label>
+                                <label class="module-switch"><input id="searchV2Site-youporn" type="checkbox" checked><span>youporn</span></label>
+                                <label class="module-switch"><input id="searchV2Site-fuq" type="checkbox" checked><span>fuq</span></label>
+                                <label class="module-switch"><input id="searchV2Site-eporner" type="checkbox" checked><span>eporner</span></label>
+                                <label class="module-switch"><input id="searchV2Site-hqporner" type="checkbox" checked><span>hqporner</span></label>
+                                <label class="module-switch"><input id="searchV2Site-tnaflix" type="checkbox" checked><span>tnaflix</span></label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="module-actions">
+                        <button class="btn" id="searchV2RunBtn" onclick="runSearchPlaylistV2()" style="background: #1abc9c; flex: 1;">Run Search</button>
+                        <button class="btn" id="searchV2ToGlobalBtn" onclick="applySearchV2ToGlobalPlaylist()" style="background: #e67e22; flex: 1;" disabled>Add to Global</button>
+                        <button class="btn" id="searchV2ToGridBtn" onclick="addSearchV2ToGrid()" style="background: #27ae60; flex: 1;" disabled>Add to Grid</button>
+                    </div>
+
+                    <textarea id="searchV2Links" class="module-input" readonly placeholder="Resolved links will appear here..." style="height: 180px; margin-bottom: 0;"></textarea>
+                </div>
+            </div>
+        </div>
+
         <div class="drop-zone" id="dropZone">
             <h3>Drag & Drop Video Files, URLs, or Links Here</h3>
             <p class="instructions">
@@ -654,6 +705,7 @@
         let selectedSlotId = '';
         const slotPlaylists = new Map();
         const GRIDPLAY_API_BASE = '/gridplay-api';
+        const GRIDPLAY_API_V2_BASE = '/gridplay-api-v2';
 
         // Drag and drop functionality
         const dropZone = document.getElementById('dropZone');
@@ -1725,6 +1777,7 @@
             document.getElementById('bulkImportModule').style.display = 'none';
             document.getElementById('playlistModule').style.display = 'none';
             document.getElementById('pawgMixModule').style.display = 'none';
+            document.getElementById('searchPlaylistModule').style.display = 'none';
             document.getElementById('globalPlaylistModule').style.display = 'none';
             document.getElementById('modalOverlay').style.display = 'none';
         }
@@ -1787,6 +1840,18 @@
             if (!isVisible) {
                 refreshPawgTargetOptions();
                 updatePawgModeFields();
+                module.style.display = 'block';
+                overlay.style.display = 'block';
+            }
+        }
+
+        function toggleSearchPlaylistModule() {
+            const module = document.getElementById('searchPlaylistModule');
+            const overlay = document.getElementById('modalOverlay');
+            const isVisible = module.style.display === 'block';
+
+            closeAllModules();
+            if (!isVisible) {
                 module.style.display = 'block';
                 overlay.style.display = 'block';
             }
@@ -1919,8 +1984,201 @@
             }
         }
 
+        let searchV2ResolvedEntries = [];
         let bulkExtractedLinks = [];
         let bulkResolvedLinks = [];
+
+        function getSearchV2SelectedSites() {
+            return Array.from(document.querySelectorAll('[id^="searchV2Site-"]'))
+                .filter(checkbox => checkbox.checked)
+                .map(checkbox => checkbox.id.replace('searchV2Site-', ''));
+        }
+
+        function parseMetricNumber(value) {
+            if (typeof value === 'number' && Number.isFinite(value)) {
+                return value;
+            }
+            if (typeof value === 'string') {
+                const cleaned = value.replace(/[^\d.]/g, '');
+                const parsed = Number(cleaned);
+                if (Number.isFinite(parsed)) {
+                    return parsed;
+                }
+            }
+            return 0;
+        }
+
+        async function resolveSearchV2Url(url) {
+            if (typeof url !== 'string' || url.trim().length === 0) {
+                return null;
+            }
+
+            const trimmedUrl = url.trim();
+            const normalizeOutputUrl = (candidate) => {
+                if (typeof candidate !== 'string' || candidate.trim().length === 0) {
+                    return null;
+                }
+                if (candidate.startsWith('/')) {
+                    return `${window.location.origin}${candidate}`;
+                }
+                return isValidUrl(candidate) ? candidate : null;
+            };
+
+            try {
+                const postResponse = await fetch(`${GRIDPLAY_API_V2_BASE}/resolve`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url: trimmedUrl })
+                });
+                if (postResponse.ok) {
+                    const postPayload = await readApiJsonOrThrow(postResponse, 'Failed to resolve search result');
+                    return normalizeOutputUrl(
+                        postPayload.url || postPayload.streamUrl || postPayload.playbackUrl || postPayload.mediaUrl || postPayload.resolvedUrl
+                    ) || normalizeOutputUrl(trimmedUrl);
+                }
+            } catch (_) {
+                // Fallback to GET variant
+            }
+
+            try {
+                const getResponse = await fetch(`${GRIDPLAY_API_V2_BASE}/resolve?url=${encodeURIComponent(trimmedUrl)}`);
+                if (getResponse.ok) {
+                    const getPayload = await readApiJsonOrThrow(getResponse, 'Failed to resolve search result');
+                    return normalizeOutputUrl(
+                        getPayload.url || getPayload.streamUrl || getPayload.playbackUrl || getPayload.mediaUrl || getPayload.resolvedUrl
+                    ) || normalizeOutputUrl(trimmedUrl);
+                }
+            } catch (_) {
+                // Fall through to raw URL
+            }
+
+            return normalizeOutputUrl(trimmedUrl);
+        }
+
+        async function runSearchPlaylistV2() {
+            const queryInput = document.getElementById('searchV2Query');
+            const minViewsInput = document.getElementById('searchV2MinViews');
+            const minRatingInput = document.getElementById('searchV2MinRating');
+            const pagesInput = document.getElementById('searchV2Pages');
+            const runBtn = document.getElementById('searchV2RunBtn');
+            const toGlobalBtn = document.getElementById('searchV2ToGlobalBtn');
+            const toGridBtn = document.getElementById('searchV2ToGridBtn');
+            const linksArea = document.getElementById('searchV2Links');
+
+            const query = queryInput.value.trim();
+            const minViews = Math.max(parseInt(minViewsInput.value, 10) || 0, 0);
+            const minRating = Math.min(Math.max(parseInt(minRatingInput.value, 10) || 0, 0), 100);
+            const pages = Math.min(Math.max(parseInt(pagesInput.value, 10) || 2, 1), 10);
+            const sites = getSearchV2SelectedSites();
+
+            if (!query) {
+                showNotification('Enter a search query first', 'warning');
+                return;
+            }
+
+            if (sites.length === 0) {
+                showNotification('Select at least one provider', 'warning');
+                return;
+            }
+
+            runBtn.disabled = true;
+            toGlobalBtn.disabled = true;
+            toGridBtn.disabled = true;
+            searchV2ResolvedEntries = [];
+            linksArea.value = 'Searching providers...';
+
+            try {
+                const response = await fetch(`${GRIDPLAY_API_V2_BASE}/search`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ query, minViews, minRating, pages, sites })
+                });
+                const payload = await readApiJsonOrThrow(response, 'Search failed');
+                const rawItems = Array.isArray(payload.results)
+                    ? payload.results
+                    : Array.isArray(payload.items)
+                        ? payload.items
+                        : Array.isArray(payload.videos)
+                            ? payload.videos
+                            : [];
+
+                if (rawItems.length === 0) {
+                    linksArea.value = 'No search results returned.';
+                    showNotification('No items found for this query', 'warning');
+                    return;
+                }
+
+                const searchCandidates = rawItems.slice(0, 120);
+                linksArea.value = `Found ${searchCandidates.length} candidates. Resolving top results...`;
+
+                for (let i = 0; i < searchCandidates.length && searchV2ResolvedEntries.length < 60; i++) {
+                    const item = searchCandidates[i] || {};
+                    const title = typeof item.title === 'string' && item.title.trim().length > 0
+                        ? item.title.trim()
+                        : `Result ${i + 1}`;
+                    const source = typeof item.source === 'string' && item.source.trim().length > 0
+                        ? item.source.trim()
+                        : (typeof item.provider === 'string' && item.provider.trim().length > 0 ? item.provider.trim() : 'unknown');
+                    const seedUrl = item.url || item.pageUrl || item.videoUrl || item.streamUrl || item.playbackUrl || item.mediaUrl || item.link || '';
+                    const resolvedUrl = await resolveSearchV2Url(seedUrl);
+
+                    if (!resolvedUrl) {
+                        continue;
+                    }
+
+                    searchV2ResolvedEntries.push({
+                        title,
+                        source,
+                        url: resolvedUrl,
+                        views: parseMetricNumber(item.views),
+                        rating: parseMetricNumber(item.rating || item.ratingPercent)
+                    });
+                }
+
+                if (searchV2ResolvedEntries.length === 0) {
+                    linksArea.value = 'No playable links could be resolved.';
+                    showNotification('Search completed, but no playable links were resolved', 'warning');
+                    return;
+                }
+
+                linksArea.value = searchV2ResolvedEntries.map(entry => entry.url).join('\n');
+                toGlobalBtn.disabled = false;
+                toGridBtn.disabled = false;
+                showNotification(`Resolved ${searchV2ResolvedEntries.length} playable links from ${searchCandidates.length} candidates`);
+            } catch (error) {
+                linksArea.value = `Error: ${error.message}`;
+                showNotification(error.message, 'warning');
+            } finally {
+                runBtn.disabled = false;
+            }
+        }
+
+        function applySearchV2ToGlobalPlaylist() {
+            if (searchV2ResolvedEntries.length === 0) {
+                showNotification('Run Search Playlist v2 first', 'warning');
+                return;
+            }
+
+            const globalInput = document.getElementById('globalPlaylistInput');
+            globalInput.value = searchV2ResolvedEntries.map(entry => entry.url).join('\n');
+            startGlobalPlaylist();
+            showNotification(`Applied ${searchV2ResolvedEntries.length} links to Global Playlist`);
+        }
+
+        async function addSearchV2ToGrid() {
+            if (searchV2ResolvedEntries.length === 0) {
+                showNotification('Run Search Playlist v2 first', 'warning');
+                return;
+            }
+
+            const entriesToAdd = searchV2ResolvedEntries.slice(0, 25);
+            for (const entry of entriesToAdd) {
+                addVideo(entry.url, entry.title, { forceHtml5: true });
+            }
+
+            showNotification(`Added ${entriesToAdd.length} videos to grid`);
+            toggleSearchPlaylistModule();
+        }
 
         async function extractBulkLinks() {
             const input = document.getElementById('bulkUrlInput');

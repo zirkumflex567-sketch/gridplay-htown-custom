@@ -1,153 +1,2389 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>GridPlay v2 Search</title>
-  <link rel="stylesheet" href="playlist-editor.css">
-  <style>
-    body { margin: 0; font-family: Arial, sans-serif; background: #101418; color: #e8edf2; }
-    .wrap { display: grid; grid-template-columns: 420px 1fr; min-height: 100vh; }
-    .left { padding: 16px; border-right: 1px solid #2a323c; overflow: auto; }
-    .right { padding: 16px; }
-    input, textarea, button { width: 100%; box-sizing: border-box; margin-bottom: 10px; padding: 10px; border-radius: 6px; border: 1px solid #394350; background: #1a222c; color: #e8edf2; }
-    button { background: #0a84ff; border: 0; cursor: pointer; }
-    .sites { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 12px; }
-    .site { font-size: 13px; display: flex; align-items: center; gap: 6px; }
-    .result { padding: 8px; border: 1px solid #2f3945; border-radius: 6px; margin-bottom: 8px; }
-    .meta { color: #9fb0c2; font-size: 12px; }
-    video { width: 100%; max-height: 60vh; background: #000; }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Multi-Video Grid Player</title>
+    <!-- HLS.js for M3U8 support -->
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #1a1a1a;
+            color: white;
+            overflow: hidden;
+        }
+
+        .container {
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .controls {
+            background: #2d2d2d;
+            padding: 15px;
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+        }
+
+        .controls.hidden {
+            display: none;
+        }
+
+        .url-input {
+            flex: 1;
+            padding: 10px;
+            border: none;
+            border-radius: 5px;
+            background: #404040;
+            color: white;
+            font-size: 14px;
+            transition: all 0.3s;
+            position: relative;
+        }
+
+        .url-input::placeholder {
+            color: #888;
+        }
+
+        .url-input.dragover {
+            background: #1e3a5f;
+            border: 2px dashed #007acc;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            background: #007acc;
+            color: white;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.3s;
+        }
+
+        .btn:hover {
+            background: #005c99;
+        }
+
+        .btn.danger {
+            background: #dc3545;
+        }
+
+        .btn.danger:hover {
+            background: #c82333;
+        }
+
+        .slot-select {
+            min-width: 140px;
+            padding: 10px;
+            border: none;
+            border-radius: 5px;
+            background: #404040;
+            color: white;
+            font-size: 14px;
+        }
+
+        .drop-zone {
+            border: 2px dashed #555;
+            padding: 40px;
+            text-align: center;
+            margin: 20px;
+            border-radius: 10px;
+            transition: all 0.3s;
+            background: #2d2d2d;
+        }
+
+        .drop-zone.dragover {
+            border-color: #007acc;
+            background: #1e3a5f;
+        }
+
+        .video-grid {
+            flex: 1;
+            display: grid;
+            gap: 10px;
+            padding: 10px;
+            overflow: auto;
+        }
+
+        .video-item {
+            position: relative;
+            background: #000;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            border: 2px solid transparent;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .video-item.selected-slot {
+            border-color: #00bcd4;
+            box-shadow: 0 0 0 2px rgba(0, 188, 212, 0.35);
+        }
+
+        .video-item video {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            background: #000;
+        }
+
+        /* Hide video controls by default, show on hover */
+        .video-item video::-webkit-media-controls {
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .video-item:hover video::-webkit-media-controls {
+            opacity: 1;
+        }
+
+        .video-item video::-webkit-media-controls-enclosure {
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .video-item:hover video::-webkit-media-controls-enclosure {
+            opacity: 1;
+        }
+
+        /* Firefox */
+        .video-item video::-moz-media-controls {
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .video-item:hover video::-moz-media-controls {
+            opacity: 1;
+        }
+
+        .video-remove {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(220, 53, 69, 0.8);
+            border: none;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            color: white;
+            cursor: pointer;
+            font-size: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        .video-item:hover .video-remove {
+            opacity: 1;
+        }
+
+        .grid-1 { grid-template-columns: 1fr; }
+        .grid-2 { grid-template-columns: repeat(2, 1fr); }
+        .grid-3 { grid-template-columns: repeat(3, 1fr); }
+        .grid-4 { grid-template-columns: repeat(2, 1fr); grid-template-rows: repeat(2, 1fr); }
+        .grid-6 { grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(2, 1fr); }
+        .grid-9 { grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, 1fr); }
+
+        .embed-error {
+            background: #2d2d2d;
+            border: 2px dashed #ff6b6b;
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            height: 100%;
+            min-height: 200px;
+        }
+
+        .embed-error a {
+            color: #007acc;
+            text-decoration: none;
+            padding: 8px 16px;
+            background: #404040;
+            border-radius: 4px;
+            transition: background 0.3s;
+        }
+
+        .embed-error a:hover {
+            background: #505050;
+        }
+
+        .file-input {
+            display: none;
+        }
+
+        .global-controls {
+            display: flex;
+            gap: 10px;
+        }
+
+        .instructions {
+            color: #888;
+            font-size: 14px;
+            margin-top: 10px;
+        }
+
+        /* Playlist Extractor Module */
+        .module-container {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 2000;
+            width: 90%;
+            max-width: 600px;
+            animation: moduleFadeIn 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            display: none;
+        }
+
+        .module-glass {
+            background: rgba(35, 35, 35, 0.85);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            padding: 24px;
+            box-shadow: 0 12px 48px rgba(0, 0, 0, 0.7);
+        }
+
+        .module-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            padding-bottom: 12px;
+        }
+
+        .module-header h3 {
+            font-weight: 500;
+            letter-spacing: 0.5px;
+        }
+
+        .close-btn {
+            background: none;
+            border: none;
+            color: #888;
+            font-size: 28px;
+            cursor: pointer;
+            line-height: 1;
+            transition: all 0.2s;
+        }
+
+        .close-btn:hover {
+            color: white;
+            transform: scale(1.1);
+        }
+
+        .module-input {
+            width: 100%;
+            padding: 14px;
+            background: rgba(0, 0, 0, 0.4);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            color: white;
+            margin-bottom: 20px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+
+        .module-input:focus {
+            outline: none;
+            border-color: #007acc;
+        }
+
+        .module-actions {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+
+        .results-container {
+            position: relative;
+        }
+
+        #playlistResults {
+            width: 100%;
+            height: 220px;
+            background: rgba(0, 0, 0, 0.5);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 10px;
+            color: #e0e0e0;
+            padding: 12px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 12px;
+            line-height: 1.6;
+            resize: none;
+        }
+
+        .module-footer {
+            display: flex;
+            gap: 12px;
+            margin-top: 20px;
+            justify-content: flex-end;
+        }
+
+        .module-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 12px;
+            margin-bottom: 14px;
+        }
+
+        .module-field label {
+            display: block;
+            font-size: 12px;
+            color: #b7b7b7;
+            margin-bottom: 6px;
+        }
+
+        .module-field.full {
+            grid-column: span 2;
+        }
+
+        .module-switch {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
+            color: #ddd;
+        }
+
+        .module-note {
+            font-size: 12px;
+            color: #9bb4d6;
+            margin-bottom: 12px;
+        }
+
+        #pawgMixStatus {
+            width: 100%;
+            height: 90px;
+            background: rgba(0, 0, 0, 0.5);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 10px;
+            color: #e0e0e0;
+            padding: 12px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 12px;
+            resize: none;
+        }
+
+        .pawg-added-list {
+            margin-top: 12px;
+            max-height: 180px;
+            overflow: auto;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 10px;
+            background: rgba(0, 0, 0, 0.45);
+            padding: 10px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 12px;
+            line-height: 1.45;
+            color: #d9d9d9;
+            white-space: pre-wrap;
+        }
+
+        .progress-bar {
+            height: 6px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 3px;
+            margin-bottom: 20px;
+            overflow: hidden;
+            display: none;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #007acc, #00c2ff);
+            width: 0%;
+            transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .loader {
+            width: 24px;
+            height: 24px;
+            border: 3px solid rgba(0, 188, 212, 0.2);
+            border-radius: 50%;
+            border-top-color: #00bcd4;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        @keyframes moduleFadeIn {
+            from { opacity: 0; transform: translate(-50%, -45%); }
+            to { opacity: 1; transform: translate(-50%, -50%); }
+        }
+
+        .btn.secondary { background: #454545; }
+        .btn.secondary:hover { background: #555555; }
+        
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            background: #333;
+        }
+
+        .overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(4px);
+            z-index: 1999;
+            display: none;
+        }
+
+        .controls-toggle {
+            position: fixed;
+            top: 8px;
+            right: 8px;
+            z-index: 1100;
+            width: 34px;
+            height: 34px;
+            border: none;
+            border-radius: 6px;
+            background: rgba(0, 0, 0, 0.6);
+            color: #fff;
+            cursor: pointer;
+            font-size: 16px;
+            line-height: 1;
+        }
+
+        .controls-toggle:hover {
+            background: rgba(0, 0, 0, 0.8);
+        }
+    </style>
 </head>
 <body>
-  <div class="wrap">
-    <div class="left">
-      <h2>GridPlay v2</h2>
-      <input id="query" placeholder="Search term">
-      <div class="sites" id="sites"></div>
-      <input id="minViews" type="number" value="50000" placeholder="Min views">
-      <input id="minRating" type="number" value="80" placeholder="Min rating %">
-      <input id="pages" type="number" value="2" placeholder="Pages per site">
-      <button onclick="runSearch()">Search + Build List</button>
-      <textarea id="playlist" rows="10" placeholder="Generated playable links"></textarea>
-      <button onclick="startLoop()">Start Endless Playlist</button>
+    <div class="container">
+        <div class="controls">
+            <input type="text" class="url-input" placeholder="Paste or drag video URLs here (YouTube, Vimeo, PMVHaven, direct video links)" id="urlInput">
+            <button class="btn" onclick="addVideoFromUrl()">Add Video</button>
+            <button class="btn" onclick="addPlaylistFromInput()">Add Playlist</button>
+            <select id="slotSelect" class="slot-select" title="Target tile for playlist">
+                <option value="">New Tile</option>
+            </select>
+            <input type="file" class="file-input" id="fileInput" accept="video/*" multiple>
+            <button class="btn" onclick="document.getElementById('fileInput').click()">Upload Files</button>
+            <div class="global-controls">
+                <button class="btn" onclick="togglePlaylistModule()" style="background: #6c5ce7;">Playlist Extractor</button>
+                <button class="btn" onclick="toggleBulkModule()" style="background: #20bf6b;">Bulk Import / Tabs</button>
+                <button class="btn" onclick="togglePawgMixModule()" style="background: #8e44ad;">Generate PAWG Mix</button>
+                <button class="btn" onclick="toggleSearchPlaylistModule()" style="background: #1abc9c;">Search Playlist v2</button>
+                <button class="btn" onclick="toggleGlobalPlaylistModule()" style="background: #e67e22;">Global Playlist</button>
+                <button class="btn" onclick="saveConfig()">Save Config</button>
+                <button class="btn" onclick="loadConfig()">Load Config</button>
+                <button class="btn danger" onclick="clearAll()">Clear All</button>
+            </div>
+            <input type="file" id="configInput" accept=".json" style="display:none;">
+        </div>
+
+        <div class="overlay" id="modalOverlay" onclick="closeAllModules()"></div>
+
+        <div class="module-container" id="globalPlaylistModule">
+            <div class="module-glass">
+                <div class="module-header">
+                    <h3>Global Continuous Playlist (Infinite Loop)</h3>
+                    <button class="close-btn" onclick="toggleGlobalPlaylistModule()">×</button>
+                </div>
+                <div class="module-content">
+                    <p id="globalPlaylistStats" style="font-size: 13px; color: #00bcd4; margin-bottom: 8px; font-weight: 500;">Playlist is currently empty.</p>
+                    <p style="font-size: 12px; color: #888; margin-bottom: 10px;">Full Queue (Edit to re-arrange or remove):</p>
+                    <textarea id="globalPlaylistInput" placeholder="Paste direct video links (one per line)..." class="module-input" style="height: 120px; margin-bottom: 15px;"></textarea>
+                    
+                    <div style="margin-bottom: 20px; padding: 15px; background: rgba(255,255,255,0.03); border-radius: 10px;">
+                        <label style="font-size: 13px; color: #ccc; display: block; margin-bottom: 8px;">Quick Append (Add more links):</label>
+                        <div style="display: flex; gap: 8px;">
+                            <input type="text" id="globalQuickAppend" placeholder="Paste link(s)..." class="module-input" style="margin-bottom: 0; flex: 1;">
+                            <button class="btn" onclick="appendGlobalPlaylistLinks()" style="background: #00bcd4;">Add</button>
+                        </div>
+                    </div>
+
+                    <div style="margin-bottom: 20px;">
+                        <label style="font-size: 14px; color: #ccc; display: block; margin-bottom: 8px;">Simultaneous Videos (Grid Slots):</label>
+                        <input type="number" id="globalSimultaneousCount" value="4" min="1" max="16" class="module-input" style="margin-bottom: 0;">
+                    </div>
+
+                    <div class="module-actions">
+                        <button id="globalStartBtn" class="btn" onclick="startGlobalPlaylist()" style="background: #e67e22; flex: 1;">Start Infinite Playlist</button>
+                        <button id="globalUpdateBtn" class="btn" onclick="updateGlobalPlaylist()" style="background: #27ae60; flex: 1; display: none;">Apply Changes to Queue</button>
+                        <button class="btn danger" onclick="stopGlobalPlaylist()" style="flex: 1;">Stop</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="module-container" id="bulkImportModule">
+            <div class="module-glass">
+                <div class="module-header">
+                    <h3>Bulk Link Importer & Tab Extractor</h3>
+                    <button class="close-btn" onclick="toggleBulkModule()">×</button>
+                </div>
+                <div class="module-content">
+                    <p style="font-size: 12px; color: #888; margin-bottom: 10px;">Paste URLs from your open tabs or clipboard. All video links will be resolved to direct files.</p>
+                    <textarea id="bulkUrlInput" placeholder="Paste multiple URLs here (one per line, space or comma separated)..." class="module-input" style="height: 120px;"></textarea>
+                    <div class="module-actions">
+                        <button class="btn" onclick="extractBulkLinks()" style="background: #20bf6b;">Resolve All Links</button>
+                    </div>
+                    <div class="progress-bar" id="bulkProgress">
+                        <div class="progress-fill" id="bulkProgressFill"></div>
+                    </div>
+                    <div class="results-container">
+                        <textarea id="bulkResults" readonly placeholder="Resolved direct links will appear here..."></textarea>
+                    </div>
+                    <div class="module-footer">
+                        <button class="btn" id="bulkCopyLinksBtn" onclick="copyBulkLinks()" disabled>Copy All Links</button>
+                        <button class="btn" id="bulkAddAllBtn" onclick="addAllBulkToGrid()" disabled style="background: #27ae60;">Add All to Grid</button>
+                        <button class="btn danger" onclick="clearBulkResults()">Clear</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="module-container" id="playlistModule">
+            <div class="module-glass">
+                <div class="module-header">
+                    <h3>PMVHaven Playlist Extractor</h3>
+                    <button class="close-btn" onclick="togglePlaylistModule()">×</button>
+                </div>
+                <div class="module-content">
+                    <input type="text" id="playlistUrlInput" placeholder="Paste PMVHaven playlist URL here..." class="module-input">
+                    <div class="module-actions">
+                        <button class="btn" onclick="extractPlaylist()">Extract Links</button>
+                        <button class="btn secondary" id="resolveAllBtn" onclick="resolveAllLinks()" disabled>Resolve Direct Links</button>
+                    </div>
+                    <div class="progress-bar" id="extractionProgress">
+                        <div class="progress-fill" id="progressFill"></div>
+                    </div>
+                    <div class="results-container">
+                        <textarea id="playlistResults" readonly placeholder="Extracted video page links will appear here..."></textarea>
+                    </div>
+                    <div class="module-footer">
+                        <button class="btn" id="copyLinksBtn" onclick="copyLinks()" disabled>Copy All Links</button>
+                        <button class="btn" id="addAllBtn" onclick="addAllToGrid()" disabled style="background: #27ae60;">Add All to Grid</button>
+                        <button class="btn danger" onclick="clearResults()">Clear</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="module-container" id="pawgMixModule">
+            <div class="module-glass">
+                <div class="module-header">
+                    <h3>PAWG PMV Auto Mix</h3>
+                    <button class="close-btn" onclick="togglePawgMixModule()">×</button>
+                </div>
+                <div class="module-content">
+                    <p class="module-note">Source priority: <strong>PMVHaven first</strong>, then safe direct-play fallback items if needed.</p>
+                    <div class="module-grid">
+                        <div class="module-field">
+                            <label for="pawgTargetSlot">Target Tile</label>
+                            <select id="pawgTargetSlot" class="module-input" style="margin-bottom: 0;">
+                                <option value="">New Tile</option>
+                            </select>
+                        </div>
+                        <div class="module-field">
+                            <label for="pawgMode">Fill Mode</label>
+                            <select id="pawgMode" class="module-input" style="margin-bottom: 0;" onchange="updatePawgModeFields()">
+                                <option value="count">Queue Size</option>
+                                <option value="duration">Target Duration (minutes)</option>
+                            </select>
+                        </div>
+                        <div class="module-field" id="pawgCountField">
+                            <label for="pawgQueueSize">Queue Size (videos)</label>
+                            <input id="pawgQueueSize" class="module-input" type="number" min="1" max="50" value="10" style="margin-bottom: 0;">
+                        </div>
+                        <div class="module-field" id="pawgDurationField" style="display:none;">
+                            <label for="pawgTargetMinutes">Target Duration (minutes)</label>
+                            <input id="pawgTargetMinutes" class="module-input" type="number" min="1" max="240" value="30" style="margin-bottom: 0;">
+                        </div>
+                        <div class="module-field full">
+                            <label class="module-switch">
+                                <input type="checkbox" id="pawgEndlessLoop" checked>
+                                <span>Endless loop generated mix in selected tile</span>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="module-actions">
+                        <button class="btn" id="pawgGenerateBtn" onclick="generatePawgMixAndStart()" style="background:#8e44ad; flex: 1;">Generate PAWG Mix</button>
+                    </div>
+                    <textarea id="pawgMixStatus" readonly placeholder="Generation status and source breakdown will appear here..."></textarea>
+                    <div id="pawgAddedList" class="pawg-added-list">Added videos will appear here after generation.</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="module-container" id="searchPlaylistModule">
+            <div class="module-glass">
+                <div class="module-header">
+                    <h3>Multi-Provider Search Playlist (v2)</h3>
+                    <button class="close-btn" onclick="toggleSearchPlaylistModule()">×</button>
+                </div>
+                <div class="module-content">
+                    <div class="module-grid">
+                        <div class="module-field full">
+                            <label for="searchV2Query">Search Query</label>
+                            <input id="searchV2Query" class="module-input" type="text" placeholder="Enter keywords..." style="margin-bottom: 0;">
+                        </div>
+                        <div class="module-field">
+                            <label for="searchV2MinViews">Min Views</label>
+                            <input id="searchV2MinViews" class="module-input" type="number" min="0" value="50000" style="margin-bottom: 0;">
+                        </div>
+                        <div class="module-field">
+                            <label for="searchV2MinRating">Min Rating</label>
+                            <input id="searchV2MinRating" class="module-input" type="number" min="0" max="100" value="80" style="margin-bottom: 0;">
+                        </div>
+                        <div class="module-field">
+                            <label for="searchV2Pages">Pages</label>
+                            <input id="searchV2Pages" class="module-input" type="number" min="1" max="10" value="2" style="margin-bottom: 0;">
+                        </div>
+                        <div class="module-field full">
+                            <label>Providers</label>
+                            <div style="display:grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px;">
+                                <label class="module-switch"><input id="searchV2Site-pmvhaven" type="checkbox" checked><span>pmvhaven</span></label>
+                                <label class="module-switch"><input id="searchV2Site-xvideos" type="checkbox" checked><span>xvideos</span></label>
+                                <label class="module-switch"><input id="searchV2Site-xhamster" type="checkbox" checked><span>xhamster</span></label>
+                                <label class="module-switch"><input id="searchV2Site-youporn" type="checkbox" checked><span>youporn</span></label>
+                                <label class="module-switch"><input id="searchV2Site-fuq" type="checkbox" checked><span>fuq</span></label>
+                                <label class="module-switch"><input id="searchV2Site-eporner" type="checkbox" checked><span>eporner</span></label>
+                                <label class="module-switch"><input id="searchV2Site-hqporner" type="checkbox" checked><span>hqporner</span></label>
+                                <label class="module-switch"><input id="searchV2Site-tnaflix" type="checkbox" checked><span>tnaflix</span></label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="module-actions">
+                        <button class="btn" id="searchV2RunBtn" onclick="runSearchPlaylistV2()" style="background: #1abc9c; flex: 1;">Run Search</button>
+                        <button class="btn" id="searchV2ToGlobalBtn" onclick="applySearchV2ToGlobalPlaylist()" style="background: #e67e22; flex: 1;" disabled>Add to Global</button>
+                        <button class="btn" id="searchV2ToGridBtn" onclick="addSearchV2ToGrid()" style="background: #27ae60; flex: 1;" disabled>Add to Grid</button>
+                    </div>
+
+                    <textarea id="searchV2Links" class="module-input" readonly placeholder="Resolved links will appear here..." style="height: 180px; margin-bottom: 0;"></textarea>
+                </div>
+            </div>
+        </div>
+
+        <div class="drop-zone" id="dropZone">
+            <h3>Drag & Drop Video Files, URLs, or Links Here</h3>
+            <p class="instructions">
+                Supports: MP4, WebM, AVI, MOV files or direct video URLs<br>
+                Platforms: YouTube, Vimeo, PMVHaven, and other video sites<br>
+                Drag from browser address bar, selected text, or anywhere on this page<br>
+                Features: Hover controls • CC enabled • Save/Load configs
+            </p>
+        </div>
+
+        <div class="video-grid" id="videoGrid"></div>
     </div>
-    <div class="right">
-      <video id="player" controls autoplay muted playsinline></video>
-      <p id="status"></p>
-      <div id="results"></div>
-    </div>
-  </div>
+    <button class="controls-toggle" id="controlsToggle" title="Hide controls">▴</button>
 
-  <script src="playlist-editor.js"></script>
-  <script>
-    const API = '/gridplay-api-v2';
-    const defaultSites = ['pmvhaven', 'xvideos', 'xhamster', 'youporn', 'fuq', 'eporner', 'hqporner', 'tnaflix'];
-    const sitesEl = document.getElementById('sites');
-    defaultSites.forEach((site) => {
-      const row = document.createElement('label');
-      row.className = 'site';
-      row.innerHTML = `<input type="checkbox" value="${site}" checked> ${site}`;
-      sitesEl.appendChild(row);
-    });
+    <script>
+        let videos = [];
+        let videoCounter = 0;
+        let selectedSlotId = '';
+        const slotPlaylists = new Map();
+        const GRIDPLAY_API_BASE = '/gridplay-api';
+        const GRIDPLAY_API_V2_BASE = '/gridplay-api-v2';
 
-    const player = document.getElementById('player');
-    let queue = [];
-    let index = 0;
+        // Drag and drop functionality
+        const dropZone = document.getElementById('dropZone');
+        const videoGrid = document.getElementById('videoGrid');
+        const urlInput = document.getElementById('urlInput');
+        const fileInput = document.getElementById('fileInput');
+        const controls = document.querySelector('.controls');
+        const controlsToggle = document.getElementById('controlsToggle');
+        const slotSelect = document.getElementById('slotSelect');
+        const pawgTargetSlot = document.getElementById('pawgTargetSlot');
 
-    function selectedSites() {
-      return [...document.querySelectorAll('#sites input:checked')].map((i) => i.value);
-    }
+        function toQueueEntry(item) {
+            if (!item) {
+                return null;
+            }
 
-    async function runSearch() {
-      const searchBtn = document.querySelector('button[onclick="runSearch()"]');
-      const oldText = searchBtn.textContent;
-      searchBtn.textContent = 'Searching... Please wait';
-      searchBtn.disabled = true;
-      document.getElementById('status').textContent = 'Scraping sites...';
+            if (typeof item === 'string') {
+                return { src: item, title: null, durationSeconds: null };
+            }
 
-      try {
-        const body = {
-        query: document.getElementById('query').value.trim(),
-        sites: selectedSites(),
-        minViews: Number(document.getElementById('minViews').value || 50000),
-        minRating: Number(document.getElementById('minRating').value || 80),
-        pages: Number(document.getElementById('pages').value || 2),
-        limit: 300
-      };
-      const res = await fetch(`${API}/search`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'search failed');
+            if (typeof item.src !== 'string' || item.src.length === 0) {
+                return null;
+            }
 
-      const out = [];
-      const render = [];
-      for (const item of data.results) {
-        try {
-          const r = await fetch(`${API}/resolve?url=${encodeURIComponent(item.pageUrl)}`);
-          const resolved = await r.json();
-          if (r.ok && resolved.streamUrl) {
-            const streamUrlStr = location.origin + resolved.streamUrl;
-            out.push({
-              url: streamUrlStr,
-              title: item.title,
-              source: item.source,
-              views: item.views,
-              rating: item.rating
+            return {
+                src: item.src,
+                title: typeof item.title === 'string' ? item.title : null,
+                durationSeconds: Number(item.durationSeconds) > 0
+                    ? Number(item.durationSeconds)
+                    : null
+            };
+        }
+
+        function setSlotPlaylist(videoId, queueItems, loop = false) {
+            const normalizedQueue = (queueItems || [])
+                .map(toQueueEntry)
+                .filter(Boolean);
+
+            if (normalizedQueue.length === 0) {
+                slotPlaylists.delete(videoId);
+                return;
+            }
+
+            slotPlaylists.set(videoId, {
+                queue: normalizedQueue.slice(),
+                baseQueue: loop ? normalizedQueue.slice() : [],
+                loop
             });
-            render.push(`<div class="result"><div>${item.title}</div><div class="meta">${item.source} | ${item.views} views | ${item.rating}%</div></div>`);
-          }
-        } catch (_) {}
-      }
+        }
 
-      queue = out;
-      index = 0;
-      document.getElementById('playlist').value = out.map(o => o.url).join('\n');
-      document.getElementById('results').innerHTML = render.join('');
-      document.getElementById('status').textContent = `Results: ${out.length}`;
-      if (window.PlaylistEditor) { window.PlaylistEditor.setQueue(queue, index); }
-      } finally {
-        searchBtn.textContent = oldText;
-        searchBtn.disabled = false;
-      }
-    }
+        function refillPlaylistQueueIfNeeded(playlist) {
+            if (!playlist) {
+                return;
+            }
 
-    function startLoop() {
-      const raw = document.getElementById('playlist').value.trim();
-      const newUrls = raw ? raw.split(/\s+/).filter(Boolean) : [];
-      if (newUrls.length) {
-        queue = newUrls.map(u => {
-          const existing = queue.find(q => (q.url || q) === u);
-          return existing || { url: u, title: 'Custom Link', source: 'Manual', views: 0, rating: 0 };
+            if (playlist.queue.length === 0 && playlist.loop && playlist.baseQueue.length > 0) {
+                playlist.queue = playlist.baseQueue.map(item => ({ ...item }));
+            }
+        }
+
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+
+        function highlight() {
+            dropZone.classList.add('dragover');
+        }
+
+        function unhighlight() {
+            dropZone.classList.remove('dragover');
+        }
+
+        function highlightInput() {
+            urlInput.classList.add('dragover');
+        }
+
+        function unhighlightInput() {
+            urlInput.classList.remove('dragover');
+        }
+
+        function handleDrop(e) {
+            const dt = e.dataTransfer;
+            const files = dt.files;
+            const text = dt.getData('text/plain') || dt.getData('text/uri-list') || dt.getData('text');
+
+            if (files.length > 0) {
+                handleFiles(files);
+            } else if (text) {
+                const urls = parseLinkList(text);
+                if (urls.length > 0) {
+                    urls.forEach(url => { addVideoWithResolution(url); });
+                } else if (isValidUrl(text.trim())) {
+                    addVideoWithResolution(text.trim());
+                }
+            }
+        }
+
+        function handleInputDrop(e) {
+            const dt = e.dataTransfer;
+            const text = dt.getData('text/plain') || dt.getData('text/uri-list') || dt.getData('text');
+
+            if (text) {
+                // For single URL drops on input, just add the first valid URL
+                const urls = parseLinkList(text);
+                if (urls.length > 0) {
+                    addVideoWithResolution(urls[0]);
+                } else if (isValidUrl(text.trim())) {
+                    addVideoWithResolution(text.trim());
+                }
+                // Clear the input field after drop
+                urlInput.value = '';
+            }
+        }
+
+        // Prevent default drag behaviors on entire document and URL input
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, preventDefaults, false);
+            urlInput.addEventListener(eventName, preventDefaults, false);
+            document.body.addEventListener(eventName, preventDefaults, false);
+            document.addEventListener(eventName, preventDefaults, false);
         });
-      } else {
-        queue = [];
-      }
-      index = 0;
-      if (!queue.length) return;
-      if (window.PlaylistEditor) { window.PlaylistEditor.setQueue(queue, index); }
-      playCurrent();
-    }
 
-    function playCurrent() {
-      if (!queue.length) return;
-      const currentItem = queue[index % queue.length];
-      player.src = typeof currentItem === 'object' ? currentItem.url : currentItem;
-      player.play().catch(() => {});
-      document.getElementById('status').textContent = `Playing ${index % queue.length + 1}/${queue.length}`;
-      if (window.PlaylistEditor) { window.PlaylistEditor.updatePlaybackState(index); }
-    }
+        // Highlight drop zone when item is dragged over it
+        ['dragenter', 'dragover'].forEach(eventName => {
+            dropZone.addEventListener(eventName, highlight, false);
+            urlInput.addEventListener(eventName, highlightInput, false);
+            document.addEventListener(eventName, function(e) {
+                if (e.dataTransfer.types.includes('text/plain') || 
+                    e.dataTransfer.types.includes('text/uri-list') ||
+                    e.dataTransfer.files.length > 0) {
+                    highlight();
+                }
+            }, false);
+        });
 
-    player.addEventListener('ended', () => { index += 1; playCurrent(); });
-    player.addEventListener('error', () => { index += 1; playCurrent(); });
+        ['dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, unhighlight, false);
+            urlInput.addEventListener(eventName, unhighlightInput, false);
+            document.addEventListener(eventName, unhighlight, false);
+        });
 
-    if (window.PlaylistEditor) {
-      window.PlaylistEditor.onQueueChange = (newQueue) => {
-        queue = newQueue;
-        document.getElementById('playlist').value = queue.map(q => q.url).join('\n');
-        document.getElementById('status').textContent = `Results: ${queue.length}`;
-        // If nothing is playing but we added items, don't auto play unless user hits button -> or maybe auto play if index=0
-      };
-    }
-  </script>
+        // Handle dropped files/URLs on entire document and URL input
+        dropZone.addEventListener('drop', handleDrop, false);
+        urlInput.addEventListener('drop', handleInputDrop, false);
+        document.addEventListener('drop', handleDrop, false);
+
+        function handleFiles(files) {
+            [...files].forEach(file => {
+                if (file.type.startsWith('video/')) {
+                    const url = URL.createObjectURL(file);
+                    addVideo(url, file.name);
+                }
+            });
+        }
+
+        function isValidUrl(string) {
+            try {
+                new URL(string);
+                return true;
+            } catch (_) {
+                return false;
+            }
+        }
+
+        function parseLinkList(inputText) {
+            return inputText
+                .split(/[\s,]+/)
+                .map(item => item.trim())
+                .filter(item => item && isValidUrl(item));
+        }
+
+        function setSelectedSlot(videoId = '') {
+            selectedSlotId = videoId;
+            slotSelect.value = videoId;
+            document.querySelectorAll('.video-item').forEach(item => {
+                item.classList.toggle('selected-slot', item.id === videoId);
+            });
+        }
+
+        function refreshSlotOptions() {
+            const previous = selectedSlotId;
+            slotSelect.innerHTML = '<option value="">New Tile</option>';
+
+            videos.forEach((video, index) => {
+                const option = document.createElement('option');
+                option.value = video.id;
+                option.textContent = `Tile ${index + 1}`;
+                slotSelect.appendChild(option);
+            });
+
+            if (previous && videos.some(video => video.id === previous)) {
+                setSelectedSlot(previous);
+            } else {
+                setSelectedSlot('');
+            }
+
+            refreshPawgTargetOptions();
+        }
+
+        function refreshPawgTargetOptions() {
+            if (!pawgTargetSlot) {
+                return;
+            }
+
+            const previous = pawgTargetSlot.value;
+            pawgTargetSlot.innerHTML = '<option value="">New Tile</option>';
+
+            videos.forEach((video, index) => {
+                const option = document.createElement('option');
+                option.value = video.id;
+                option.textContent = `Tile ${index + 1}`;
+                pawgTargetSlot.appendChild(option);
+            });
+
+            if (previous && videos.some(video => video.id === previous)) {
+                pawgTargetSlot.value = previous;
+            }
+        }
+
+        function bindSlotSelection(videoItem) {
+            videoItem.addEventListener('click', function(e) {
+                if (e.target.closest('.video-remove')) {
+                    return;
+                }
+                setSelectedSlot(videoItem.id);
+            });
+        }
+
+        function convertYouTubeUrl(url) {
+            // Handle various YouTube URL formats
+            let videoId = null;
+            
+            // Standard watch URLs
+            const watchRegex = /(?:youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/;
+            let match = url.match(watchRegex);
+            
+            if (match) {
+                videoId = match[1];
+            } else {
+                // YouTube Shorts
+                const shortsRegex = /youtube\.com\/shorts\/([a-zA-Z0-9_-]{11})/;
+                match = url.match(shortsRegex);
+                
+                if (match) {
+                    videoId = match[1];
+                } else {
+                    // Embed URLs
+                    const embedRegex = /youtube\.com\/embed\/([a-zA-Z0-9_-]{11})/;
+                    match = url.match(embedRegex);
+                    
+                    if (match) {
+                        videoId = match[1];
+                    } else {
+                        // Channel or other YouTube URLs - try to extract from various parameters
+                        const paramRegex = /[?&]v=([a-zA-Z0-9_-]{11})/;
+                        match = url.match(paramRegex);
+                        if (match) {
+                            videoId = match[1];
+                        }
+                    }
+                }
+            }
+            
+            if (videoId && videoId.length === 11) {
+                const params = new URLSearchParams({
+                    rel: '0',
+                    modestbranding: '1',
+                    cc_load_policy: '1',
+                    playsinline: '1',
+                    hd: '1',
+                    vq: 'hd1080'
+                });
+                return `https://www.youtube.com/embed/${videoId}?${params.toString()}`;
+            }
+            
+            return url;
+        }
+
+        function convertPornhubUrl(url) {
+            // Extract video ID from Pornhub URLs
+            const regExp = /pornhub\.com\/view_video\.php\?viewkey=([a-zA-Z0-9]+)/;
+            const match = url.match(regExp);
+            
+            if (match && match[1]) {
+                return `https://www.pornhub.com/embed/${match[1]}`;
+            }
+            return url;
+        }
+
+        function convertVimeoUrl(url) {
+            // Extract video ID from Vimeo URLs
+            const regExp = /vimeo\.com\/(\d+)/;
+            const match = url.match(regExp);
+            
+            if (match && match[1]) {
+                const params = new URLSearchParams({
+                    quality: '1080p',
+                    autoplay: '0',
+                    byline: '0',
+                    portrait: '0',
+                    title: '0'
+                });
+                return `https://player.vimeo.com/video/${match[1]}?${params.toString()}`;
+            }
+            return url;
+        }
+
+        function getNormalizedUrl(url) {
+            try {
+                return new URL(url);
+            } catch (_) {
+                return null;
+            }
+        }
+
+        function isPmvhavenVideoUrl(url) {
+            const parsed = getNormalizedUrl(url);
+            if (!parsed) {
+                return false;
+            }
+
+            const host = parsed.hostname.toLowerCase();
+            if (host !== 'pmvhaven.com' && host !== 'www.pmvhaven.com') {
+                return false;
+            }
+
+            return parsed.pathname.includes('/video/') || parsed.pathname.includes('/videos/');
+        }
+
+        function summarizeNonJsonResponse(rawText) {
+            if (typeof rawText !== 'string' || rawText.trim().length === 0) {
+                return 'Received non-JSON response from server.';
+            }
+
+            const compact = rawText
+                .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+                .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+                .replace(/<[^>]+>/g, ' ')
+                .replace(/\s+/g, ' ')
+                .trim();
+
+            if (!compact) {
+                return 'Received HTML error page from server.';
+            }
+
+            return compact.slice(0, 220);
+        }
+
+        async function readApiJsonOrThrow(response, fallbackMessage) {
+            const contentType = (response.headers.get('content-type') || '').toLowerCase();
+            const expectsJson = contentType.includes('application/json');
+
+            if (!expectsJson) {
+                const rawText = await response.text();
+                const summary = summarizeNonJsonResponse(rawText);
+                throw new Error(`${fallbackMessage} (HTTP ${response.status}) - ${summary}`);
+            }
+
+            let payload = null;
+            try {
+                payload = await response.json();
+            } catch (_) {
+                throw new Error(`${fallbackMessage} (HTTP ${response.status}) - Invalid JSON response.`);
+            }
+
+            if (!response.ok) {
+                throw new Error(payload && payload.error ? payload.error : `${fallbackMessage} (HTTP ${response.status}).`);
+            }
+
+            return payload;
+        }
+
+        async function resolvePmvhavenUrl(url) {
+            const response = await fetch(`${GRIDPLAY_API_BASE}/resolve?url=${encodeURIComponent(url)}`);
+            const payload = await readApiJsonOrThrow(response, 'Could not resolve PMVHaven video URL');
+
+            if (!payload.streamUrl) {
+                throw new Error('Could not resolve PMVHaven video URL.');
+            }
+
+            return payload;
+        }
+
+        async function addVideoWithResolution(src, name = null, options = {}) {
+            if (!isPmvhavenVideoUrl(src)) {
+                addVideo(src, name, options);
+                return;
+            }
+
+            try {
+                const resolved = await resolvePmvhavenUrl(src);
+                addVideo(src, name, {
+                    ...options,
+                    forceHtml5: true,
+                    playbackSrc: resolved.streamUrl
+                });
+            } catch (error) {
+                addPmvhavenResolveError(src, name);
+                showNotification(error.message || 'PMVHaven video could not be loaded', 'warning');
+            }
+        }
+
+        function addPmvhavenResolveError(src, name = null) {
+            videoCounter++;
+            const videoId = `video-${videoCounter}`;
+
+            const videoItem = document.createElement('div');
+            videoItem.className = 'video-item';
+            videoItem.id = videoId;
+            videoItem.innerHTML = `
+                <div class="embed-error" style="padding:20px; text-align:center; color:#ff6b6b;">
+                    <p>PMVHaven video could not be resolved for in-grid playback.</p>
+                    <p style="font-size:12px; margin-top:10px;">
+                        <a href="${src}" target="_blank" rel="noopener noreferrer" style="color:#007acc;">Open PMVHaven page</a>
+                    </p>
+                </div>
+                <button class="video-remove" onclick="removeVideo('${videoId}')" title="Remove video">×</button>
+            `;
+
+            videos.push({
+                id: videoId,
+                src: src,
+                name: name || `Video ${videoCounter}`
+            });
+
+            videoGrid.appendChild(videoItem);
+            bindSlotSelection(videoItem);
+            updateGridLayout();
+            hideDropZone();
+        }
+
+        function buildVideoMarkup(src, videoId, options = {}) {
+            const playbackSrc = options.playbackSrc || src;
+            const forceHtml5 = options.forceHtml5 === true;
+            const playbackType = playbackSrc.toLowerCase().includes('.m3u8')
+                ? 'application/x-mpegURL'
+                : 'video/mp4';
+
+            if (!forceHtml5 && (src.includes('youtube.com') || src.includes('youtu.be'))) {
+                const embedUrl = convertYouTubeUrl(src);
+                return `
+                    <iframe src="${embedUrl}"
+                            frameborder="0"
+                            allowfullscreen
+                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                            style="width:100%;height:100%;"
+                            onerror="handleEmbedErrorAndContinue('${videoId}')">
+                    </iframe>
+                    <div class="embed-error" id="error-${videoId}" style="display:none; padding:20px; text-align:center; color:#ff6b6b;">
+                        <p>⚠ This YouTube video cannot be embedded</p>
+                        <p style="font-size:12px; margin-top:10px;">
+                            <a href="${src}" target="_blank" rel="noopener noreferrer" style="color:#007acc;">Open in new tab</a>
+                        </p>
+                    </div>`;
+            }
+
+            if (!forceHtml5 && src.includes('pornhub.com')) {
+                const embedUrl = convertPornhubUrl(src);
+                return `
+                    <iframe src="${embedUrl}"
+                            frameborder="0"
+                            allowfullscreen
+                            style="width:100%;height:100%;"
+                            onerror="handleEmbedErrorAndContinue('${videoId}')">
+                    </iframe>
+                    <div class="embed-error" id="error-${videoId}" style="display:none; padding:20px; text-align:center; color:#ff6b6b;">
+                        <p>⚠ This video cannot be embedded</p>
+                        <p style="font-size:12px; margin-top:10px;">
+                            <a href="${src}" target="_blank" rel="noopener noreferrer" style="color:#007acc;">Open in new tab</a>
+                        </p>
+                    </div>`;
+            }
+
+            if (!forceHtml5 && src.includes('vimeo.com')) {
+                const embedUrl = convertVimeoUrl(src);
+                return `
+                    <iframe src="${embedUrl}"
+                            frameborder="0"
+                            allowfullscreen
+                            allow="autoplay; fullscreen; picture-in-picture"
+                            style="width:100%;height:100%;">
+                    </iframe>`;
+            }
+
+            if (!forceHtml5 && (src.includes('adult') || src.includes('xxx') || src.toLowerCase().includes('porn'))) {
+                return `
+                    <iframe src="${src}"
+                            frameborder="0"
+                            allowfullscreen
+                            style="width:100%;height:100%;"
+                            onerror="handleEmbedErrorAndContinue('${videoId}')">
+                    </iframe>
+                    <div class="embed-error" id="error-${videoId}" style="display:none; padding:20px; text-align:center; color:#ff6b6b;">
+                        <p>⚠ This video cannot be embedded</p>
+                        <p style="font-size:12px; margin-top:10px;">
+                            <a href="${src}" target="_blank" rel="noopener noreferrer" style="color:#007acc;">Open in new tab</a>
+                        </p>
+                    </div>`;
+            }
+
+            return `<video autoplay controls muted preload="metadata" playsinline webkit-playsinline="true" style="outline: none;">
+                <source src="${playbackSrc}" type="${playbackType}">
+                <track kind="captions" srclang="en" label="English" default>
+                Your browser does not support the video tag.
+            </video>`;
+        }
+
+        function wireMediaEvents(videoId) {
+            const videoItem = document.getElementById(videoId);
+            if (!videoItem) {
+                return;
+            }
+
+            const video = videoItem.querySelector('video');
+            if (video) {
+                const source = video.querySelector('source');
+                const isHls = source && (source.type === 'application/x-mpegURL' || source.src.includes('.m3u8'));
+                
+                if (isHls && typeof Hls !== 'undefined' && Hls.isSupported()) {
+                    const hls = new Hls();
+                    hls.loadSource(source.src);
+                    hls.attachMedia(video);
+                    video.hls = hls;
+                    
+                    hls.on(Hls.Events.MANIFEST_PARSED, function() {
+                        if (video.hasAttribute('autoplay')) {
+                            video.play().catch(e => console.warn("Autoplay prevented:", e));
+                        }
+                    });
+                    
+                    hls.on(Hls.Events.ERROR, function(event, data) {
+                        if (data.fatal) {
+                            switch (data.type) {
+                                case Hls.ErrorTypes.NETWORK_ERROR:
+                                    hls.startLoad();
+                                    break;
+                                case Hls.ErrorTypes.MEDIA_ERROR:
+                                    hls.recoverMediaError();
+                                    break;
+                                default:
+                                    hls.destroy();
+                                    advancePlaylist(videoId);
+                                    break;
+                            }
+                        }
+                    });
+                } else if (isHls && video.canPlayType('application/vnd.apple.mpegurl')) {
+                    video.src = source.src;
+                }
+
+                video.addEventListener('loadedmetadata', function() {
+                    if (video.textTracks && video.textTracks.length > 0) {
+                        for (let i = 0; i < video.textTracks.length; i++) {
+                            video.textTracks[i].mode = 'showing';
+                        }
+                    }
+                });
+
+                video.addEventListener('ended', function() {
+                    advancePlaylist(videoId);
+                });
+
+                video.addEventListener('error', function() {
+                    advancePlaylist(videoId);
+                });
+            }
+        }
+
+        function updateVideoSlotContent(videoId, src, name = null, options = {}) {
+            const videoItem = document.getElementById(videoId);
+            if (!videoItem) {
+                return;
+            }
+
+            const oldVideo = videoItem.querySelector('video');
+            if (oldVideo && oldVideo.hls) {
+                oldVideo.hls.destroy();
+            }
+
+            const videoElement = buildVideoMarkup(src, videoId, options);
+            videoItem.innerHTML = `
+                ${videoElement}
+                <button class="video-remove" onclick="removeVideo('${videoId}')" title="Remove video">×</button>
+            `;
+            bindSlotSelection(videoItem);
+
+            const index = videos.findIndex(v => v.id === videoId);
+            if (index !== -1) {
+                videos[index].src = src;
+                if (name) {
+                    videos[index].name = name;
+                }
+            }
+
+            wireMediaEvents(videoId);
+        }
+
+        function addVideo(src, name = null, options = {}) {
+            videoCounter++;
+            const videoId = `video-${videoCounter}`;
+
+            const videoItem = document.createElement('div');
+            videoItem.className = 'video-item';
+            videoItem.id = videoId;
+            videoGrid.appendChild(videoItem);
+
+            videos.push({
+                id: videoId,
+                src: src,
+                name: name || `Video ${videoCounter}`
+            });
+
+            bindSlotSelection(videoItem);
+            updateGridLayout();
+            hideDropZone();
+
+            // If it's a PMVHaven URL and no direct stream is provided, resolve it JIT
+            if (isPmvhavenVideoUrl(src) && !options.playbackSrc) {
+                // Show a mini loader in the tile
+                videoItem.innerHTML = `
+                    <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:100%; color:#00bcd4; font-size:13px; background:#1a1a1a;">
+                        <span class="loader" style="margin-bottom:10px;"></span>
+                        Resolving stream...
+                    </div>
+                `;
+                loadSourceIntoSlot(videoId, src, name);
+            } else {
+                updateVideoSlotContent(videoId, src, name, options);
+            }
+        }
+
+        async function loadSourceIntoSlot(videoId, src, name = null, options = {}) {
+            if (!isPmvhavenVideoUrl(src)) {
+                updateVideoSlotContent(videoId, src, name, options);
+                return true;
+            }
+
+            try {
+                const resolved = await resolvePmvhavenUrl(src);
+                updateVideoSlotContent(videoId, src, name, {
+                    ...options,
+                    forceHtml5: true,
+                    playbackSrc: resolved.streamUrl
+                });
+                return true;
+            } catch (error) {
+                const videoItem = document.getElementById(videoId);
+                if (videoItem) {
+                    videoItem.innerHTML = `
+                        <div class="embed-error" style="padding:20px; text-align:center; color:#ff6b6b;">
+                            <p>PMVHaven video could not be resolved for in-grid playback.</p>
+                            <p style="font-size:12px; margin-top:10px;">
+                                <a href="${src}" target="_blank" rel="noopener noreferrer" style="color:#007acc;">Open PMVHaven page</a>
+                            </p>
+                        </div>
+                        <button class="video-remove" onclick="removeVideo('${videoId}')" title="Remove video">×</button>
+                    `;
+                    bindSlotSelection(videoItem);
+                }
+
+                showNotification(error.message || 'PMVHaven video could not be loaded', 'warning');
+                return false;
+            }
+        }
+
+        async function advancePlaylist(videoId) {
+            const playlist = slotPlaylists.get(videoId);
+            if (!playlist) {
+                return;
+            }
+
+            refillPlaylistQueueIfNeeded(playlist);
+            if (playlist.queue.length === 0) {
+                slotPlaylists.delete(videoId);
+                return;
+            }
+
+            const maxAttempts = Math.max(playlist.queue.length, 1);
+            for (let attempt = 0; attempt < maxAttempts; attempt++) {
+                const next = playlist.queue.shift();
+                const loaded = await loadSourceIntoSlot(videoId, next.src, next.title, { forceHtml5: true });
+                if (loaded) {
+                    refillPlaylistQueueIfNeeded(playlist);
+                    if (!playlist.loop && playlist.queue.length === 0) {
+                        slotPlaylists.delete(videoId);
+                    }
+                    return;
+                }
+                refillPlaylistQueueIfNeeded(playlist);
+                if (playlist.queue.length === 0 && !playlist.loop) {
+                    slotPlaylists.delete(videoId);
+                    return;
+                }
+            }
+
+            if (!playlist.loop && playlist.queue.length === 0) {
+                slotPlaylists.delete(videoId);
+            }
+        }
+
+        async function addPlaylistFromInput() {
+            const raw = urlInput.value.trim();
+            const urls = parseLinkList(raw);
+
+            if (urls.length === 0) {
+                showNotification('No valid URLs found for playlist', 'warning');
+                return;
+            }
+
+            let targetSlotId = slotSelect.value;
+
+            if (!targetSlotId) {
+                await addVideoWithResolution(urls[0]);
+                targetSlotId = videos[videos.length - 1].id;
+                setSlotPlaylist(targetSlotId, urls.slice(1).map(src => ({ src })), false);
+            } else {
+                const loaded = await loadSourceIntoSlot(targetSlotId, urls[0]);
+                if (!loaded) {
+                    showNotification('Failed to load first playlist item', 'warning');
+                    return;
+                }
+                setSlotPlaylist(targetSlotId, urls.slice(1).map(src => ({ src })), false);
+            }
+
+            setSelectedSlot(targetSlotId);
+            urlInput.value = '';
+            showNotification(`Playlist queued in selected tile (${urls.length} links)`);
+        }
+
+        function handleEmbedError(videoId) {
+            const iframe = document.querySelector(`#${videoId} iframe`);
+            const errorDiv = document.getElementById(`error-${videoId}`);
+            if (iframe && errorDiv) {
+                iframe.style.display = 'none';
+                errorDiv.style.display = 'block';
+            }
+        }
+
+        function handleEmbedErrorAndContinue(videoId) {
+            handleEmbedError(videoId);
+            advancePlaylist(videoId);
+        }
+
+        function removeVideo(videoId) {
+            const videoElement = document.getElementById(videoId);
+            if (videoElement) {
+                const oldVideo = videoElement.querySelector('video');
+                if (oldVideo && oldVideo.hls) {
+                    oldVideo.hls.destroy();
+                }
+                videoElement.remove();
+                videos = videos.filter(v => v.id !== videoId);
+                slotPlaylists.delete(videoId);
+                if (selectedSlotId === videoId) {
+                    selectedSlotId = '';
+                }
+                updateGridLayout();
+                refreshSlotOptions();
+                
+                if (videos.length === 0) {
+                    showDropZone();
+                }
+
+                if (isGlobalPlaylistActive) {
+                    checkGlobalPlaylistFill();
+                }
+            }
+        }
+
+        function updateGridLayout() {
+            const count = videos.length;
+            videoGrid.className = 'video-grid';
+            
+            if (count === 0) return;
+            if (count === 1) videoGrid.classList.add('grid-1');
+            else if (count === 2) videoGrid.classList.add('grid-2');
+            else if (count === 3) videoGrid.classList.add('grid-3');
+            else if (count <= 4) videoGrid.classList.add('grid-4');
+            else if (count <= 6) videoGrid.classList.add('grid-6');
+            else videoGrid.classList.add('grid-9');
+
+            refreshSlotOptions();
+        }
+
+        function hideDropZone() {
+            dropZone.style.display = 'none';
+        }
+
+        function showDropZone() {
+            dropZone.style.display = 'block';
+        }
+
+        async function addVideoFromUrl() {
+            const url = urlInput.value.trim();
+            if (url) {
+                await addVideoWithResolution(url);
+                urlInput.value = '';
+            }
+        }
+
+        function showNotification(message, type = 'info') {
+            const notification = document.createElement('div');
+            notification.className = `notification ${type}`;
+            notification.textContent = message;
+            notification.style.cssText = `
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                background: ${type === 'warning' ? '#ff9800' : '#4caf50'};
+                color: white;
+                padding: 12px 20px;
+                border-radius: 5px;
+                z-index: 1000;
+                font-size: 14px;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+                transition: opacity 0.3s;
+            `;
+            
+            document.body.appendChild(notification);
+            
+            setTimeout(() => {
+                notification.style.opacity = '0';
+                setTimeout(() => {
+                    if (notification.parentNode) {
+                        notification.parentNode.removeChild(notification);
+                    }
+                }, 300);
+            }, 3000);
+        }
+
+        function saveConfig() {
+            const now = new Date();
+            const timestamp = now.toISOString().replace(/[:.]/g, '-').split('T')[0] + '_' + 
+                             now.toTimeString().split(' ')[0].replace(/:/g, '-');
+            
+            const config = {
+                videos: videos,
+                timestamp: now.toISOString(),
+                version: '1.0'
+            };
+            
+            const dataStr = JSON.stringify(config, null, 2);
+            const dataBlob = new Blob([dataStr], {type: 'application/json'});
+            
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(dataBlob);
+            link.download = `multi-video-config-${timestamp}.json`;
+            link.click();
+            
+            showNotification(`Configuration saved! (${videos.length} videos)`);
+        }
+
+        function loadConfig() {
+            document.getElementById('configInput').click();
+        }
+
+        function handleConfigLoad(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            
+            const reader = new FileReader();
+            reader.onload = async function(e) {
+                try {
+                    const config = JSON.parse(e.target.result);
+                    
+                    if (config.videos && Array.isArray(config.videos)) {
+                        // Clear existing videos
+                        clearAll();
+                        
+                        // Load videos from config
+                        for (const videoData of config.videos) {
+                            await addVideoWithResolution(videoData.src, videoData.name);
+                        }
+                        
+                        showNotification(`Configuration loaded! (${config.videos.length} videos)`);
+                    } else {
+                        showNotification('Invalid configuration file', 'warning');
+                    }
+                } catch (error) {
+                    showNotification('Error loading configuration file', 'warning');
+                    console.error('Config load error:', error);
+                }
+            };
+            reader.readAsText(file);
+            
+            // Reset file input
+            event.target.value = '';
+        }
+
+        function clearAll() {
+            videos = [];
+            slotPlaylists.clear();
+            videoGrid.innerHTML = '';
+            updateGridLayout();
+            showDropZone();
+        }
+
+        // Handle file input
+        fileInput.addEventListener('change', function(e) {
+            handleFiles(e.target.files);
+        });
+
+        // Handle config file input
+        document.getElementById('configInput').addEventListener('change', handleConfigLoad);
+
+        // Handle Enter key in URL input
+        urlInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                const urls = parseLinkList(urlInput.value.trim());
+                if (urls.length > 1) {
+                    addPlaylistFromInput();
+                } else {
+                    addVideoFromUrl();
+                }
+            }
+        });
+
+        // Handle paste in URL input
+        urlInput.addEventListener('paste', function(e) {
+            setTimeout(async () => {
+                const raw = e.target.value.trim();
+                const urls = parseLinkList(raw);
+                if (urls.length > 1) {
+                    await addPlaylistFromInput();
+                } else if (urls.length === 1) {
+                    await addVideoWithResolution(urls[0]);
+                    e.target.value = '';
+                }
+            }, 100);
+        });
+
+        slotSelect.addEventListener('change', function(e) {
+            setSelectedSlot(e.target.value);
+        });
+
+        controlsToggle.addEventListener('click', function() {
+            const hidden = controls.classList.toggle('hidden');
+            controlsToggle.textContent = hidden ? '▾' : '▴';
+            controlsToggle.title = hidden ? 'Show controls' : 'Hide controls';
+        });
+
+        refreshSlotOptions();
+
+        // Playlist Module Functions
+        function togglePlaylistModule() {
+            const module = document.getElementById('playlistModule');
+            const overlay = document.getElementById('modalOverlay');
+            const isVisible = module.style.display === 'block';
+            
+            module.style.display = isVisible ? 'none' : 'block';
+            overlay.style.display = isVisible ? 'none' : 'block';
+        }
+
+        async function extractPlaylist() {
+            const urlInput = document.getElementById('playlistUrlInput');
+            const resultsArea = document.getElementById('playlistResults');
+            const url = urlInput.value.trim();
+            
+            if (!url || !isValidUrl(url)) {
+                showNotification('Please enter a valid playlist URL', 'warning');
+                return;
+            }
+
+            resultsArea.value = 'Fetching playlist content...';
+            document.getElementById('resolveAllBtn').disabled = true;
+            document.getElementById('copyLinksBtn').disabled = true;
+            document.getElementById('addAllBtn').disabled = true;
+
+            try {
+                const response = await fetch(`${GRIDPLAY_API_BASE}/playlist?url=${encodeURIComponent(url)}`);
+                const data = await readApiJsonOrThrow(response, 'Failed to extract playlist');
+
+                if (data.links && data.links.length > 0) {
+                    extractedLinks = data.links;
+                    resultsArea.value = data.links.join('\n');
+                    showNotification(`Found ${data.links.length} video links!`);
+                    
+                    document.getElementById('resolveAllBtn').disabled = false;
+                    document.getElementById('copyLinksBtn').disabled = false;
+                    document.getElementById('addAllBtn').disabled = false;
+                } else {
+                    resultsArea.value = 'No video links found in this playlist.';
+                }
+            } catch (error) {
+                resultsArea.value = `Error: ${error.message}`;
+                showNotification(error.message, 'warning');
+            }
+        }
+
+        let extractedLinks = [];
+        let resolvedLinks = [];
+
+        async function resolveAllLinks() {
+            if (extractedLinks.length === 0) return;
+
+            const resultsArea = document.getElementById('playlistResults');
+            const progress = document.getElementById('extractionProgress');
+            const fill = document.getElementById('progressFill');
+            
+            progress.style.display = 'block';
+            resolvedLinks = [];
+            resultsArea.value = 'Resolving direct links (this may take a while)...\n\n';
+            
+            document.getElementById('resolveAllBtn').disabled = true;
+            
+            for (let i = 0; i < extractedLinks.length; i++) {
+                const link = extractedLinks[i];
+                const percentage = ((i + 1) / extractedLinks.length) * 100;
+                fill.style.width = `${percentage}%`;
+
+                try {
+                    const resolved = await resolvePmvhavenUrl(link);
+                    if (resolved && resolved.streamUrl) {
+                        const directLink = window.location.origin + resolved.streamUrl;
+                        resolvedLinks.push(directLink);
+                        resultsArea.value += `${directLink}\n`;
+                    }
+                } catch (error) {
+                    resultsArea.value += `Failed: ${link}\n`;
+                }
+                
+                // Small delay to be respectful
+                await new Promise(r => setTimeout(r, 500));
+            }
+            
+            showNotification(`Resolution complete! ${resolvedLinks.length} direct links found.`);
+            setTimeout(() => { progress.style.display = 'none'; fill.style.width = '0%'; }, 1000);
+        }
+
+        function copyLinks() {
+            const resultsArea = document.getElementById('playlistResults');
+            resultsArea.select();
+            document.execCommand('copy');
+            showNotification('Links copied to clipboard!');
+        }
+
+        function clearResults() {
+            document.getElementById('playlistResults').value = '';
+            document.getElementById('playlistUrlInput').value = '';
+            document.getElementById('resolveAllBtn').disabled = true;
+            document.getElementById('copyLinksBtn').disabled = true;
+            document.getElementById('addAllBtn').disabled = true;
+            extractedLinks = [];
+            resolvedLinks = [];
+        }
+
+        async function addAllToGrid() {
+            const linksToAdd = resolvedLinks.length > 0 ? resolvedLinks : extractedLinks;
+            
+            if (linksToAdd.length === 0) return;
+            
+            showNotification(`Adding ${linksToAdd.length} videos to grid...`);
+            
+            for (const link of linksToAdd) {
+                // If they are already direct stream links, we can add them directly
+                if (link.includes('/stream?url=')) {
+                    addVideo(link, null, { forceHtml5: true });
+                } else {
+                    await addVideoWithResolution(link);
+                }
+            }
+            
+            togglePlaylistModule();
+        }
+
+        // Bulk Module Functions
+        function closeAllModules() {
+            document.getElementById('bulkImportModule').style.display = 'none';
+            document.getElementById('playlistModule').style.display = 'none';
+            document.getElementById('pawgMixModule').style.display = 'none';
+            document.getElementById('searchPlaylistModule').style.display = 'none';
+            document.getElementById('globalPlaylistModule').style.display = 'none';
+            document.getElementById('modalOverlay').style.display = 'none';
+        }
+
+        function toggleGlobalPlaylistModule() {
+            const module = document.getElementById('globalPlaylistModule');
+            const overlay = document.getElementById('modalOverlay');
+            const input = document.getElementById('globalPlaylistInput');
+            const isVisible = module.style.display === 'block';
+            
+            closeAllModules();
+            if (!isVisible) {
+                // Pre-populate if active
+                if (isGlobalPlaylistActive && globalPlaylistLinks.length > 0) {
+                    input.value = globalPlaylistLinks.join('\n');
+                    updateGlobalPlaylistStats();
+                }
+                module.style.display = 'block';
+                overlay.style.display = 'block';
+            }
+        }
+
+        function updateGlobalPlaylistStats() {
+            const stats = document.getElementById('globalPlaylistStats');
+            if (stats && globalPlaylistLinks.length > 0) {
+                stats.textContent = `Queue: ${globalPlaylistLinks.length} videos | Current Index: ${globalPlaylistIndex % globalPlaylistLinks.length + 1}`;
+            }
+        }
+
+        function toggleBulkModule() {
+            const module = document.getElementById('bulkImportModule');
+            const overlay = document.getElementById('modalOverlay');
+            const isVisible = module.style.display === 'block';
+            
+            closeAllModules();
+            if (!isVisible) {
+                module.style.display = 'block';
+                overlay.style.display = 'block';
+            }
+        }
+
+        function togglePlaylistModule() {
+            const module = document.getElementById('playlistModule');
+            const overlay = document.getElementById('modalOverlay');
+            const isVisible = module.style.display === 'block';
+            
+            closeAllModules();
+            if (!isVisible) {
+                module.style.display = 'block';
+                overlay.style.display = 'block';
+            }
+        }
+
+        function togglePawgMixModule() {
+            const module = document.getElementById('pawgMixModule');
+            const overlay = document.getElementById('modalOverlay');
+            const isVisible = module.style.display === 'block';
+
+            closeAllModules();
+            if (!isVisible) {
+                refreshPawgTargetOptions();
+                updatePawgModeFields();
+                module.style.display = 'block';
+                overlay.style.display = 'block';
+            }
+        }
+
+        function toggleSearchPlaylistModule() {
+            const module = document.getElementById('searchPlaylistModule');
+            const overlay = document.getElementById('modalOverlay');
+            const isVisible = module.style.display === 'block';
+
+            closeAllModules();
+            if (!isVisible) {
+                module.style.display = 'block';
+                overlay.style.display = 'block';
+            }
+        }
+
+        function updatePawgModeFields() {
+            const mode = document.getElementById('pawgMode').value;
+            document.getElementById('pawgCountField').style.display = mode === 'count' ? 'block' : 'none';
+            document.getElementById('pawgDurationField').style.display = mode === 'duration' ? 'block' : 'none';
+        }
+
+        function writePawgStatus(text) {
+            document.getElementById('pawgMixStatus').value = text;
+        }
+
+        function writePawgAddedList(items) {
+            const panel = document.getElementById('pawgAddedList');
+            if (!panel) {
+                return;
+            }
+
+            if (!Array.isArray(items) || items.length === 0) {
+                panel.textContent = 'No videos added yet.';
+                return;
+            }
+
+            panel.textContent = items.map((item, index) => {
+                const title = item.title || `Video ${index + 1}`;
+                const source = item.source || 'unknown';
+                const url = item.playbackUrl || item.streamUrl || item.mediaUrl || '(missing playback URL)';
+                return `${index + 1}. ${title}\n   source: ${source}\n   playback: ${url}`;
+            }).join('\n\n');
+        }
+
+        function pickMixPlayableSource(item) {
+            return item.playbackUrl || item.streamUrl || item.mediaUrl || item.pageUrl || null;
+        }
+
+        function capGeneratedMixByDuration(items, minutes) {
+            const targetSeconds = Math.max(Number(minutes) || 1, 1) * 60;
+            const selected = [];
+            let total = 0;
+            for (const item of items) {
+                selected.push(item);
+                total += Number(item.durationSeconds) > 0
+                    ? Number(item.durationSeconds)
+                    : 240;
+                if (total >= targetSeconds && selected.length > 0) {
+                    break;
+                }
+            }
+            return selected;
+        }
+
+        async function generatePawgMixAndStart() {
+            const mode = document.getElementById('pawgMode').value;
+            const queueSize = Math.min(Math.max(parseInt(document.getElementById('pawgQueueSize').value, 10) || 10, 1), 50);
+            const targetMinutes = Math.min(Math.max(parseInt(document.getElementById('pawgTargetMinutes').value, 10) || 30, 1), 240);
+            const endlessLoop = document.getElementById('pawgEndlessLoop').checked;
+            let targetSlotId = pawgTargetSlot.value;
+
+            const generateBtn = document.getElementById('pawgGenerateBtn');
+            generateBtn.disabled = true;
+            writePawgStatus('Generating PAWG PMV mix...\nPriority: PMVHaven -> fallback sources');
+            writePawgAddedList([]);
+
+            try {
+                const params = new URLSearchParams({
+                    mode,
+                    count: String(queueSize),
+                    targetMinutes: String(targetMinutes)
+                });
+                const response = await fetch(`${GRIDPLAY_API_BASE}/pawg-mix?${params.toString()}`);
+                const payload = await readApiJsonOrThrow(response, 'Mix generation failed');
+
+                if (!Array.isArray(payload.items) || payload.items.length === 0) {
+                    throw new Error('No playable mix items returned.');
+                }
+
+                const cappedItems = mode === 'duration'
+                    ? capGeneratedMixByDuration(payload.items, targetMinutes)
+                    : payload.items.slice(0, queueSize);
+
+                const queueEntries = cappedItems
+                    .map(item => ({
+                        src: pickMixPlayableSource(item),
+                        title: item.title || null,
+                        durationSeconds: Number(item.durationSeconds) > 0 ? Number(item.durationSeconds) : null
+                    }))
+                    .filter(entry => typeof entry.src === 'string');
+
+                if (queueEntries.length === 0) {
+                    throw new Error('Generated items had no playable URLs.');
+                }
+
+                const firstEntry = queueEntries.shift();
+                if (!targetSlotId) {
+                    addVideo(firstEntry.src, firstEntry.title, { forceHtml5: true });
+                    targetSlotId = videos[videos.length - 1].id;
+                } else {
+                    const loaded = await loadSourceIntoSlot(targetSlotId, firstEntry.src, firstEntry.title, { forceHtml5: true });
+                    if (!loaded) {
+                        throw new Error('Could not load first generated mix item.');
+                    }
+                }
+
+                setSlotPlaylist(targetSlotId, queueEntries, endlessLoop);
+                setSelectedSlot(targetSlotId);
+                pawgTargetSlot.value = targetSlotId;
+
+                const detail = [
+                    `Generated ${queueEntries.length + 1} items (${mode === 'duration' ? `${targetMinutes} min target` : `${queueSize} count target`}).`,
+                    `PMVHaven items: ${payload.breakdown.pmvhaven}`,
+                    `Fallback items: ${payload.breakdown.fallback}`,
+                    `Media policy: ${payload.mediaPolicy && payload.mediaPolicy.hlsFallbackUsed ? 'HLS fallback used' : 'MP4-only output'}`,
+                    `Estimated duration: ${payload.estimatedDurationMinutes} min`,
+                    `Endless loop: ${endlessLoop ? 'on' : 'off'}`
+                ].join('\n');
+
+                writePawgStatus(detail);
+                writePawgAddedList(Array.isArray(payload.added) ? payload.added : cappedItems);
+                showNotification(`PAWG mix started in tile (${queueEntries.length + 1} items)`);
+                togglePawgMixModule();
+            } catch (error) {
+                writePawgStatus(`Error: ${error.message}`);
+                writePawgAddedList([]);
+                showNotification(error.message, 'warning');
+            } finally {
+                generateBtn.disabled = false;
+            }
+        }
+
+        let searchV2ResolvedEntries = [];
+        let bulkExtractedLinks = [];
+        let bulkResolvedLinks = [];
+
+        function getSearchV2SelectedSites() {
+            return Array.from(document.querySelectorAll('[id^="searchV2Site-"]'))
+                .filter(checkbox => checkbox.checked)
+                .map(checkbox => checkbox.id.replace('searchV2Site-', ''));
+        }
+
+        function parseMetricNumber(value) {
+            if (typeof value === 'number' && Number.isFinite(value)) {
+                return value;
+            }
+            if (typeof value === 'string') {
+                const cleaned = value.replace(/[^\d.]/g, '');
+                const parsed = Number(cleaned);
+                if (Number.isFinite(parsed)) {
+                    return parsed;
+                }
+            }
+            return 0;
+        }
+
+        async function resolveSearchV2Url(url) {
+            if (typeof url !== 'string' || url.trim().length === 0) {
+                return null;
+            }
+
+            const trimmedUrl = url.trim();
+            const normalizeOutputUrl = (candidate) => {
+                if (typeof candidate !== 'string' || candidate.trim().length === 0) {
+                    return null;
+                }
+                if (candidate.startsWith('/')) {
+                    return `${window.location.origin}${candidate}`;
+                }
+                return isValidUrl(candidate) ? candidate : null;
+            };
+
+            try {
+                const postResponse = await fetch(`${GRIDPLAY_API_V2_BASE}/resolve`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url: trimmedUrl })
+                });
+                if (postResponse.ok) {
+                    const postPayload = await readApiJsonOrThrow(postResponse, 'Failed to resolve search result');
+                    return normalizeOutputUrl(
+                        postPayload.url || postPayload.streamUrl || postPayload.playbackUrl || postPayload.mediaUrl || postPayload.resolvedUrl
+                    ) || normalizeOutputUrl(trimmedUrl);
+                }
+            } catch (_) {
+                // Fallback to GET variant
+            }
+
+            try {
+                const getResponse = await fetch(`${GRIDPLAY_API_V2_BASE}/resolve?url=${encodeURIComponent(trimmedUrl)}`);
+                if (getResponse.ok) {
+                    const getPayload = await readApiJsonOrThrow(getResponse, 'Failed to resolve search result');
+                    return normalizeOutputUrl(
+                        getPayload.url || getPayload.streamUrl || getPayload.playbackUrl || getPayload.mediaUrl || getPayload.resolvedUrl
+                    ) || normalizeOutputUrl(trimmedUrl);
+                }
+            } catch (_) {
+                // Fall through to raw URL
+            }
+
+            return normalizeOutputUrl(trimmedUrl);
+        }
+
+        async function runSearchPlaylistV2() {
+            const queryInput = document.getElementById('searchV2Query');
+            const minViewsInput = document.getElementById('searchV2MinViews');
+            const minRatingInput = document.getElementById('searchV2MinRating');
+            const pagesInput = document.getElementById('searchV2Pages');
+            const runBtn = document.getElementById('searchV2RunBtn');
+            const toGlobalBtn = document.getElementById('searchV2ToGlobalBtn');
+            const toGridBtn = document.getElementById('searchV2ToGridBtn');
+            const linksArea = document.getElementById('searchV2Links');
+
+            const query = queryInput.value.trim();
+            const minViews = Math.max(parseInt(minViewsInput.value, 10) || 0, 0);
+            const minRating = Math.min(Math.max(parseInt(minRatingInput.value, 10) || 0, 0), 100);
+            const pages = Math.min(Math.max(parseInt(pagesInput.value, 10) || 2, 1), 10);
+            const sites = getSearchV2SelectedSites();
+
+            if (!query) {
+                showNotification('Enter a search query first', 'warning');
+                return;
+            }
+
+            if (sites.length === 0) {
+                showNotification('Select at least one provider', 'warning');
+                return;
+            }
+
+            runBtn.disabled = true;
+            toGlobalBtn.disabled = true;
+            toGridBtn.disabled = true;
+            searchV2ResolvedEntries = [];
+            linksArea.value = 'Searching providers...';
+
+            try {
+                const response = await fetch(`${GRIDPLAY_API_V2_BASE}/search`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ query, minViews, minRating, pages, sites })
+                });
+                const payload = await readApiJsonOrThrow(response, 'Search failed');
+                const rawItems = Array.isArray(payload.results)
+                    ? payload.results
+                    : Array.isArray(payload.items)
+                        ? payload.items
+                        : Array.isArray(payload.videos)
+                            ? payload.videos
+                            : [];
+
+                if (rawItems.length === 0) {
+                    linksArea.value = 'No search results returned.';
+                    showNotification('No items found for this query', 'warning');
+                    return;
+                }
+
+                const searchCandidates = rawItems.slice(0, 120);
+                linksArea.value = `Found ${searchCandidates.length} candidates. Resolving top results...`;
+
+                for (let i = 0; i < searchCandidates.length && searchV2ResolvedEntries.length < 60; i++) {
+                    const item = searchCandidates[i] || {};
+                    const title = typeof item.title === 'string' && item.title.trim().length > 0
+                        ? item.title.trim()
+                        : `Result ${i + 1}`;
+                    const source = typeof item.source === 'string' && item.source.trim().length > 0
+                        ? item.source.trim()
+                        : (typeof item.provider === 'string' && item.provider.trim().length > 0 ? item.provider.trim() : 'unknown');
+                    const seedUrl = item.url || item.pageUrl || item.videoUrl || item.streamUrl || item.playbackUrl || item.mediaUrl || item.link || '';
+                    const resolvedUrl = await resolveSearchV2Url(seedUrl);
+
+                    if (!resolvedUrl) {
+                        continue;
+                    }
+
+                    searchV2ResolvedEntries.push({
+                        title,
+                        source,
+                        url: resolvedUrl,
+                        views: parseMetricNumber(item.views),
+                        rating: parseMetricNumber(item.rating || item.ratingPercent)
+                    });
+                }
+
+                if (searchV2ResolvedEntries.length === 0) {
+                    linksArea.value = 'No playable links could be resolved.';
+                    showNotification('Search completed, but no playable links were resolved', 'warning');
+                    return;
+                }
+
+                linksArea.value = searchV2ResolvedEntries.map(entry => entry.url).join('\n');
+                toGlobalBtn.disabled = false;
+                toGridBtn.disabled = false;
+                showNotification(`Resolved ${searchV2ResolvedEntries.length} playable links from ${searchCandidates.length} candidates`);
+            } catch (error) {
+                linksArea.value = `Error: ${error.message}`;
+                showNotification(error.message, 'warning');
+            } finally {
+                runBtn.disabled = false;
+            }
+        }
+
+        function applySearchV2ToGlobalPlaylist() {
+            if (searchV2ResolvedEntries.length === 0) {
+                showNotification('Run Search Playlist v2 first', 'warning');
+                return;
+            }
+
+            const globalInput = document.getElementById('globalPlaylistInput');
+            globalInput.value = searchV2ResolvedEntries.map(entry => entry.url).join('\n');
+            startGlobalPlaylist();
+            showNotification(`Applied ${searchV2ResolvedEntries.length} links to Global Playlist`);
+        }
+
+        async function addSearchV2ToGrid() {
+            if (searchV2ResolvedEntries.length === 0) {
+                showNotification('Run Search Playlist v2 first', 'warning');
+                return;
+            }
+
+            const entriesToAdd = searchV2ResolvedEntries.slice(0, 25);
+            for (const entry of entriesToAdd) {
+                addVideo(entry.url, entry.title, { forceHtml5: true });
+            }
+
+            showNotification(`Added ${entriesToAdd.length} videos to grid`);
+            toggleSearchPlaylistModule();
+        }
+
+        async function extractBulkLinks() {
+            const input = document.getElementById('bulkUrlInput');
+            const resultsArea = document.getElementById('bulkResults');
+            
+            const rawText = input.value.trim();
+            if (!rawText) {
+                showNotification('Please enter at least one URL', 'warning');
+                return;
+            }
+
+            // Extract valid URLs from text (handles spaces, commas, newlines)
+            const lines = rawText.split(/[\n,\s]+/).map(l => l.trim()).filter(l => l && isValidUrl(l));
+            
+            if (lines.length === 0) {
+                showNotification('No valid URLs found', 'warning');
+                return;
+            }
+
+            // Just identify them and show them in the results area
+            // We NO LONGER pre-resolve here to avoid the logic mismatch
+            bulkExtractedLinks = lines;
+            resultsArea.value = lines.join('\n');
+            
+            showNotification(`Identified ${lines.length} URLs. Click 'Add All to Grid' to process them.`);
+            document.getElementById('bulkAddAllBtn').disabled = false;
+            document.getElementById('bulkCopyLinksBtn').disabled = false;
+        }
+
+        function copyBulkLinks() {
+            const resultsArea = document.getElementById('bulkResults');
+            resultsArea.select();
+            document.execCommand('copy');
+            showNotification('Links copied to clipboard!');
+        }
+
+        function clearBulkResults() {
+            document.getElementById('bulkResults').value = '';
+            document.getElementById('bulkUrlInput').value = '';
+            document.getElementById('bulkAddAllBtn').disabled = true;
+            document.getElementById('bulkCopyLinksBtn').disabled = true;
+            bulkExtractedLinks = [];
+            bulkResolvedLinks = [];
+        }
+
+        async function addAllBulkToGrid() {
+            if (bulkExtractedLinks.length === 0) return;
+            
+            // If the user wants to add many videos, we automatically switch to Global Playlist mode
+            // to respect their capacity settings.
+            const targetCountInput = document.getElementById('globalSimultaneousCount');
+            const targetCount = targetCountInput ? parseInt(targetCountInput.value) : 4;
+            globalPlaylistTargetCount = targetCount;
+            
+            // Set up the queue
+            globalPlaylistLinks = [...bulkExtractedLinks];
+            globalPlaylistIndex = 0;
+            isGlobalPlaylistActive = true;
+            
+            // Clear current grid to start fresh with the new batch
+            clearAll();
+            
+            showNotification(`Started Global Playlist with ${bulkExtractedLinks.length} videos (Limit: ${targetCount} slots)`);
+            
+            updateGlobalUI();
+            checkGlobalPlaylistFill();
+
+            // Update UI to show management mode buttons
+            document.getElementById('globalStartBtn').style.display = 'none';
+            document.getElementById('globalUpdateBtn').style.display = 'inline-block';
+            document.querySelector('button[onclick="toggleGlobalPlaylistModule()"]').style.background = '#d35400';
+
+            toggleBulkModule();
+        }
+
+        // Global Playlist Mode
+        let isGlobalPlaylistActive = false;
+        let globalPlaylistLinks = [];
+        let globalPlaylistIndex = 0;
+        let globalPlaylistTargetCount = 0;
+
+        async function checkGlobalPlaylistFill() {
+            if (!isGlobalPlaylistActive || globalPlaylistLinks.length === 0) return;
+            
+            while (videos.length < globalPlaylistTargetCount) {
+                const link = globalPlaylistLinks[globalPlaylistIndex % globalPlaylistLinks.length];
+                globalPlaylistIndex++;
+                addVideo(link);
+                // Slight delay to avoid layout jitter
+                await new Promise(r => setTimeout(r, 200));
+            }
+        }
+
+        async function startGlobalPlaylist() {
+            const input = document.getElementById('globalPlaylistInput');
+            const countInput = document.getElementById('globalSimultaneousCount');
+            const rawText = input.value.trim();
+            
+            const links = rawText.split(/[\n,\s]+/).map(l => l.trim()).filter(l => l && isValidUrl(l));
+            
+            if (links.length === 0) {
+                showNotification('Please enter at least one valid direct video link', 'warning');
+                return;
+            }
+
+            const simultaneousCount = parseInt(countInput.value) || 4;
+            
+            // Activate mode
+            isGlobalPlaylistActive = true;
+            globalPlaylistLinks = links;
+            globalPlaylistIndex = 0;
+            globalPlaylistTargetCount = simultaneousCount;
+
+            // Clear grid
+            clearAll();
+            showNotification(`Starting Global Playlist with ${simultaneousCount} slots...`);
+
+            // Initialize Slots
+            await checkGlobalPlaylistFill();
+
+            // Update UI to show management mode
+            document.getElementById('globalStartBtn').style.display = 'none';
+            document.getElementById('globalUpdateBtn').style.display = 'inline-block';
+            document.querySelector('button[onclick="toggleGlobalPlaylistModule()"]').style.background = '#d35400';
+            document.querySelector('button[onclick="toggleGlobalPlaylistModule()"]').textContent = 'Global Playlist (Active)';
+
+            toggleGlobalPlaylistModule();
+        }
+
+        function updateGlobalPlaylist() {
+            const input = document.getElementById('globalPlaylistInput');
+            const countInput = document.getElementById('globalSimultaneousCount');
+            const rawText = input.value.trim();
+            const links = rawText.split(/[\n,\s]+/).map(l => l.trim()).filter(l => l && isValidUrl(l));
+            
+            if (links.length === 0) {
+                showNotification('The playlist cannot be empty', 'warning');
+                return;
+            }
+
+            globalPlaylistLinks = links;
+            globalPlaylistTargetCount = parseInt(countInput.value) || globalPlaylistTargetCount;
+            
+            showNotification(`Global Playlist updated! Scaling to ${globalPlaylistTargetCount} slots...`, 'info');
+            updateGlobalPlaylistStats();
+            checkGlobalPlaylistFill();
+            toggleGlobalPlaylistModule();
+        }
+
+        function appendGlobalPlaylistLinks() {
+            const quickInput = document.getElementById('globalQuickAppend');
+            const textarea = document.getElementById('globalPlaylistInput');
+            const raw = quickInput.value.trim();
+            const newLinks = raw.split(/[\n,\s]+/).map(l => l.trim()).filter(l => l && isValidUrl(l));
+            
+            if (newLinks.length === 0) {
+                showNotification('Please enter at least one valid link', 'warning');
+                return;
+            }
+
+            // Append to internal list
+            globalPlaylistLinks = [...globalPlaylistLinks, ...newLinks];
+            
+            // Sync UI textarea if it's open
+            if (textarea.value.trim()) {
+                textarea.value += '\n' + newLinks.join('\n');
+            } else {
+                textarea.value = newLinks.join('\n');
+            }
+            
+            quickInput.value = '';
+            showNotification(`Added ${newLinks.length} videos to queue! Total: ${globalPlaylistLinks.length}`, 'success');
+            updateGlobalPlaylistStats();
+            
+            // If we weren't active before, maybe we should start? No, let the user hit Start.
+            // But if we ARE active, the loop will naturally pick them up.
+        }
+
+        function stopGlobalPlaylist() {
+            isGlobalPlaylistActive = false;
+            
+            // Reset UI
+            document.getElementById('globalStartBtn').style.display = 'inline-block';
+            document.getElementById('globalUpdateBtn').style.display = 'none';
+            document.querySelector('button[onclick="toggleGlobalPlaylistModule()"]').style.background = '#e67e22';
+            document.querySelector('button[onclick="toggleGlobalPlaylistModule()"]').textContent = 'Global Playlist';
+            
+            showNotification('Global Playlist mode deactivated.', 'info');
+            toggleGlobalPlaylistModule();
+        }
+
+        // Override advancePlaylist to support Global Mode
+        const originalAdvancePlaylist = advancePlaylist;
+        advancePlaylist = async function(videoId) {
+            if (isGlobalPlaylistActive) {
+                const link = globalPlaylistLinks[globalPlaylistIndex % globalPlaylistLinks.length];
+                globalPlaylistIndex++;
+                
+                showNotification(`Global Mode: Replacing finished video in slot ${videoId.split('-')[1]}...`);
+                await loadSourceIntoSlot(videoId, link);
+                return;
+            }
+            // Fallback to original per-slot logic
+            await originalAdvancePlaylist(videoId);
+        };
+    </script>
 </body>
 </html>

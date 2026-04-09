@@ -28,6 +28,7 @@ const PAWG_BODY_KEYWORDS = [
     'twerk'
 ];
 const PMV_CONTEXT_KEYWORDS = ['pmv', 'porn music video', 'porn'];
+const PORN_CONTEXT_KEYWORDS = ['porn', 'xxx', 'adult', 'nsfw', 'sex'];
 const PMVHAVEN_DISCOVERY_URLS = [
     'https://pmvhaven.com/videos',
     'https://pmvhaven.com/videos?sort=trending',
@@ -349,7 +350,8 @@ function containsFallbackPawgKeywords(text) {
     const normalized = text.toLowerCase();
     const hasCorePawg = PAWG_CORE_KEYWORDS.some(keyword => normalized.includes(keyword));
     const hasBodyContext = PAWG_BODY_KEYWORDS.some(keyword => normalized.includes(keyword));
-    return hasCorePawg || hasBodyContext;
+    const hasPornContext = PORN_CONTEXT_KEYWORDS.some(keyword => normalized.includes(keyword));
+    return (hasCorePawg || hasBodyContext) && hasPornContext;
 }
 
 function extractTitleFromHtml(html) {
@@ -532,7 +534,7 @@ function pickArchiveMp4File(files) {
 async function collectFallbackPawgItems(targetCount) {
     const wantedCount = Math.max(1, Number(targetCount) || 1);
     const searchUrl = new URL('https://archive.org/advancedsearch.php');
-    searchUrl.searchParams.set('q', '(title:(pawg OR "phat ass" OR "big ass" OR "bubble butt" OR thick OR booty) OR subject:(pawg OR "phat ass" OR "big ass" OR "bubble butt" OR thick OR booty)) AND mediatype:(movies)');
+    searchUrl.searchParams.set('q', '(title:(pawg OR "phat ass" OR "big ass" OR "bubble butt" OR thick OR booty) OR subject:(pawg OR "phat ass" OR "big ass" OR "bubble butt" OR thick OR booty)) AND (title:(porn OR xxx OR adult) OR subject:(porn OR xxx OR adult)) AND mediatype:(movies)');
     searchUrl.searchParams.set('fl[]', 'identifier,title');
     searchUrl.searchParams.set('rows', String(Math.max(20, wantedCount * 6)));
     searchUrl.searchParams.set('page', '1');

@@ -862,6 +862,10 @@
         const tileMenuHintTimers = new Map();
         let openTileMenuId = '';
         let playlistEditorContext = null;
+        let playlistEditorContextVersion = 0;
+        let playlistEditorContextWarningAt = 0;
+        const slotAdvanceStates = new Map();
+        let globalAdvanceEmptyWarningAt = 0;
 
         function clampNumber(value, min, max) {
             return Math.min(max, Math.max(min, value));
@@ -903,6 +907,60 @@
 
         function getTileEntry(videoId) {
             return videos.find(video => video.id === videoId) || null;
+        }
+
+        function setPlaylistEditorContext(nextContext) {
+            playlistEditorContextVersion += 1;
+            if (!nextContext) {
+                playlistEditorContext = null;
+                return null;
+            }
+
+            playlistEditorContext = {
+                ...nextContext,
+                version: playlistEditorContextVersion
+            };
+
+            return playlistEditorContext;
+        }
+
+        function warnPlaylistEditorContextInvalid(message) {
+            const now = Date.now();
+            if (now - playlistEditorContextWarningAt < 2000) {
+                return;
+            }
+            playlistEditorContextWarningAt = now;
+            showNotification(message, 'warning');
+        }
+
+        function invalidatePlaylistEditorSlotContext(videoId) {
+            if (!playlistEditorContext || playlistEditorContext.mode !== 'slot' || playlistEditorContext.slotId !== videoId) {
+                return;
+            }
+
+            setPlaylistEditorContext(null);
+            if (window.PlaylistEditor) {
+                if (typeof window.PlaylistEditor.toggleStatus === 'function') {
+                    window.PlaylistEditor.toggleStatus(false);
+                }
+            }
+            warnPlaylistEditorContextInvalid('Selected slot was removed. Playlist Editor context was cleared.');
+        }
+
+        function isPlaylistEditorContextCurrent(expectedContext) {
+            if (!expectedContext || !playlistEditorContext) {
+                return false;
+            }
+
+            if (expectedContext.version !== playlistEditorContext.version || expectedContext.mode !== playlistEditorContext.mode) {
+                return false;
+            }
+
+            if (expectedContext.mode === 'slot') {
+                return expectedContext.slotId === playlistEditorContext.slotId;
+            }
+
+            return true;
         }
 
         function getTileCurrentItem(videoId) {
@@ -1685,8 +1743,8 @@
         }
 
         async function applyPlaylistEditorQueueToRuntime(editorQueue) {
-            const context = playlistEditorContext;
-            if (!context) {
+            const context = playlistEditorContext ? { ...playlistEditorContext } : null;
+            if (!context || !isPlaylistEditorContextCurrent(context)) {
                 return;
             }
 
@@ -1695,6 +1753,9 @@
                 .filter(Boolean);
 
             if (context.mode === 'global') {
+                if (!isPlaylistEditorContextCurrent(context)) {
+                    return;
+                }
                 globalPlaylistLinks = normalizedQueue.map(item => item.src);
                 globalPlaylistIndex = 0;
                 document.getElementById('globalPlaylistInput').value = globalPlaylistLinks.join('\n');
@@ -1721,7 +1782,10 @@
 
             const slotId = context.slotId;
             if (!getTileEntry(slotId)) {
-                showNotification('Selected slot is no longer available', 'warning');
+                if (isPlaylistEditorContextCurrent(context)) {
+                    setPlaylistEditorContext(null);
+                    warnPlaylistEditorContextInvalid('Selected slot is no longer available');
+                }
                 return;
             }
 
@@ -1738,8 +1802,12 @@
             if (!tileEntry || tileEntry.src !== currentItem.src) {
                 const loaded = await loadSourceIntoSlot(slotId, currentItem.src, currentItem.title, {
                     forceHtml5: true,
-                    __suppressNotification: true
+                    __suppressNotification: true,
+                    __contextGuard: () => isPlaylistEditorContextCurrent(context) && Boolean(getTileEntry(slotId))
                 });
+                if (!isPlaylistEditorContextCurrent(context)) {
+                    return;
+                }
                 if (!loaded) {
                     showNotification('Failed to load selected first item from editor queue', 'warning');
                     return;
@@ -1761,7 +1829,7 @@
             }
 
             if (isGlobalPlaylistActive) {
-                playlistEditorContext = { mode: 'global' };
+                setPlaylistEditorContext({ mode: 'global' });
                 const queue = buildGlobalEditorQueue();
                 window.PlaylistEditor.setQueue(queue, 0);
                 window.PlaylistEditor.toggleStatus(queue.length > 0);
@@ -1779,7 +1847,7 @@
                 return;
             }
 
-            playlistEditorContext = { mode: 'slot', slotId: selectedSlotId };
+            setPlaylistEditorContext({ mode: 'slot', slotId: selectedSlotId });
             const queue = buildSlotEditorQueue(selectedSlotId);
             window.PlaylistEditor.setQueue(queue, 0);
             window.PlaylistEditor.toggleStatus(queue.length > 0);
@@ -1987,13 +2055,84 @@
             }).filter(Boolean);
         }
 
-        function getNextHtml5AudioVideoId(fromVideoId = '') {
-            const html5Tiles = getHtml5TileVideos();
-            if (html5Tiles.length === 0) {
+        function getIframeProviderFromSrc(src = '') {
+            if (typeof src !== 'string' || src.length === 0) {
                 return '';
             }
 
-            const ids = html5Tiles.map(item => item.videoId);
+            try {
+                const parsed = new URL(src, window.location.href);
+                const host = parsed.hostname.toLowerCase();
+                if (host.includes('youtube.com') || host.includes('youtu.be') || host.includes('youtube-nocookie.com')) {
+                    return 'youtube';
+                }
+                if (host.includes('vimeo.com')) {
+                    return 'vimeo';
+                }
+            } catch (_) {
+                return '';
+            }
+
+            return '';
+        }
+
+        function getSupportedIframeTiles() {
+            return videos.map(entry => {
+                const tile = document.getElementById(entry.id);
+                if (!tile) {
+                    return null;
+                }
+
+                const iframe = tile.querySelector('iframe');
+                if (!iframe) {
+                    return null;
+                }
+
+                const provider = getIframeProviderFromSrc(iframe.getAttribute('src') || '');
+                if (!provider) {
+                    return null;
+                }
+
+                return {
+                    videoId: entry.id,
+                    iframe,
+                    provider
+                };
+            }).filter(Boolean);
+        }
+
+        function sendIframeProviderCommand(tile, muted) {
+            if (!tile || !tile.iframe || !tile.iframe.contentWindow) {
+                return;
+            }
+
+            if (tile.provider === 'youtube') {
+                tile.iframe.contentWindow.postMessage(JSON.stringify({
+                    event: 'command',
+                    func: muted ? 'mute' : 'unMute',
+                    args: []
+                }), '*');
+                return;
+            }
+
+            if (tile.provider === 'vimeo') {
+                tile.iframe.contentWindow.postMessage(JSON.stringify({ method: 'setMuted', value: muted }), '*');
+                tile.iframe.contentWindow.postMessage(JSON.stringify({ method: 'setVolume', value: muted ? 0 : 1 }), '*');
+            }
+        }
+
+        function getControllableAudioVideoIds() {
+            const html5Ids = getHtml5TileVideos().map(item => item.videoId);
+            const iframeIds = getSupportedIframeTiles().map(item => item.videoId);
+            return Array.from(new Set([...html5Ids, ...iframeIds]));
+        }
+
+        function getNextAudioVideoId(fromVideoId = '') {
+            const ids = getControllableAudioVideoIds();
+            if (ids.length === 0) {
+                return '';
+            }
+
             let startIndex = ids.indexOf(fromVideoId);
 
             if (startIndex === -1) {
@@ -2013,23 +2152,34 @@
 
             try {
                 const html5Tiles = getHtml5TileVideos();
-                if (html5Tiles.length === 0) {
+                const iframeTiles = getSupportedIframeTiles();
+                const controllableIds = Array.from(new Set([
+                    ...html5Tiles.map(item => item.videoId),
+                    ...iframeTiles.map(item => item.videoId)
+                ]));
+
+                if (controllableIds.length === 0) {
                     activeAudioVideoId = '';
                     updateGlobalMuteToggle();
                     return;
                 }
 
-                const hasPreferred = preferredAudioVideoId && html5Tiles.some(item => item.videoId === preferredAudioVideoId);
-                const hasCurrent = activeAudioVideoId && html5Tiles.some(item => item.videoId === activeAudioVideoId);
+                const hasPreferred = preferredAudioVideoId && controllableIds.includes(preferredAudioVideoId);
+                const hasCurrent = activeAudioVideoId && controllableIds.includes(activeAudioVideoId);
 
                 if (hasPreferred) {
                     activeAudioVideoId = preferredAudioVideoId;
                 } else if (!hasCurrent) {
-                    activeAudioVideoId = html5Tiles[0].videoId;
+                    activeAudioVideoId = controllableIds[0];
                 }
 
                 html5Tiles.forEach(item => {
                     item.media.muted = globalMuteMode || item.videoId !== activeAudioVideoId;
+                });
+
+                iframeTiles.forEach(item => {
+                    const shouldMute = globalMuteMode || item.videoId !== activeAudioVideoId;
+                    sendIframeProviderCommand(item, shouldMute);
                 });
 
                 updateGlobalMuteToggle();
@@ -2056,7 +2206,7 @@
         }
 
         function switchActiveAudioToNext(fromVideoId = '') {
-            const nextVideoId = getNextHtml5AudioVideoId(fromVideoId);
+            const nextVideoId = getNextAudioVideoId(fromVideoId);
             if (!nextVideoId) {
                 return;
             }
@@ -2129,6 +2279,7 @@
             
             if (videoId && videoId.length === 11) {
                 const params = new URLSearchParams({
+                    enablejsapi: '1',
                     rel: '0',
                     modestbranding: '1',
                     cc_load_policy: '1',
@@ -2136,6 +2287,9 @@
                     hd: '1',
                     vq: 'hd1080'
                 });
+                if (window.location && window.location.origin) {
+                    params.set('origin', window.location.origin);
+                }
                 return `https://www.youtube.com/embed/${videoId}?${params.toString()}`;
             }
             
@@ -2155,11 +2309,13 @@
 
         function convertVimeoUrl(url) {
             // Extract video ID from Vimeo URLs
-            const regExp = /vimeo\.com\/(\d+)/;
+            const regExp = /vimeo\.com\/(?:video\/)?(\d+)/;
             const match = url.match(regExp);
             
             if (match && match[1]) {
                 const params = new URLSearchParams({
+                    api: '1',
+                    player_id: `gridplay-${match[1]}`,
                     quality: '1080p',
                     autoplay: '0',
                     byline: '0',
@@ -2377,6 +2533,14 @@
                 return;
             }
 
+            const iframe = videoItem.querySelector('iframe');
+            if (iframe && iframe.dataset.audioPolicyBound !== 'true') {
+                iframe.addEventListener('load', function() {
+                    queueGlobalAudioPolicy();
+                });
+                iframe.dataset.audioPolicyBound = 'true';
+            }
+
             const video = videoItem.querySelector('video');
             if (video) {
                 const attemptState = beginSlotAttempt(videoId, meta.src || video.currentSrc || '', meta.name || null, meta.options || {});
@@ -2552,15 +2716,25 @@
         }
 
         async function loadSourceIntoSlot(videoId, src, name = null, options = {}) {
+            const contextGuard = typeof options.__contextGuard === 'function' ? options.__contextGuard : null;
+            const sanitizedOptions = { ...options };
+            delete sanitizedOptions.__contextGuard;
+
             if (!isPmvhavenVideoUrl(src)) {
-                updateVideoSlotContent(videoId, src, name, options);
+                if (contextGuard && !contextGuard()) {
+                    return false;
+                }
+                updateVideoSlotContent(videoId, src, name, sanitizedOptions);
                 return true;
             }
 
             try {
                 const resolved = await resolvePmvhavenUrl(src);
+                if (contextGuard && !contextGuard()) {
+                    return false;
+                }
                 updateVideoSlotContent(videoId, src, name, {
-                    ...options,
+                    ...sanitizedOptions,
                     forceHtml5: true,
                     playbackSrc: resolved.streamUrl
                 });
@@ -2690,6 +2864,8 @@
             const videoElement = document.getElementById(videoId);
             if (videoElement) {
                 teardownSlotAttemptState(videoId);
+                slotAdvanceStates.delete(videoId);
+                invalidatePlaylistEditorSlotContext(videoId);
                 const hintTimer = tileMenuHintTimers.get(videoId);
                 if (hintTimer) {
                     clearTimeout(hintTimer);
@@ -2929,7 +3105,9 @@
             }
             videos = [];
             activeAudioVideoId = '';
+            slotAdvanceStates.clear();
             slotPlaylists.clear();
+            setPlaylistEditorContext(null);
             videoGrid.innerHTML = '';
             updateGridLayout();
             showDropZone();
@@ -3799,16 +3977,58 @@
 
         // Override advancePlaylist to support Global Mode
         const originalAdvancePlaylist = advancePlaylist;
-        advancePlaylist = async function(videoId) {
-            if (isGlobalPlaylistActive) {
-                const link = globalPlaylistLinks[globalPlaylistIndex % globalPlaylistLinks.length];
-                globalPlaylistIndex++;
-
-                await loadSourceIntoSlot(videoId, link, null, { __suppressNotification: true });
+        async function advanceGlobalPlaylistForSlot(videoId) {
+            if (!Array.isArray(globalPlaylistLinks) || globalPlaylistLinks.length === 0) {
+                const now = Date.now();
+                if (now - globalAdvanceEmptyWarningAt > 4000) {
+                    globalAdvanceEmptyWarningAt = now;
+                    showNotification('Global Playlist queue is empty', 'warning');
+                }
                 return;
             }
-            // Fallback to original per-slot logic
-            await originalAdvancePlaylist(videoId);
+
+            const candidateCount = globalPlaylistLinks.length;
+            for (let attempt = 0; attempt < candidateCount; attempt++) {
+                const link = globalPlaylistLinks[globalPlaylistIndex % candidateCount];
+                globalPlaylistIndex++;
+                const loaded = await loadSourceIntoSlot(videoId, link, null, { __suppressNotification: true });
+                if (loaded) {
+                    return;
+                }
+            }
+        }
+
+        function enqueueAdvancePlaylist(videoId) {
+            const existing = slotAdvanceStates.get(videoId);
+            if (existing) {
+                existing.pending = true;
+                return existing.promise;
+            }
+
+            const state = {
+                pending: false,
+                promise: null
+            };
+
+            state.promise = (async () => {
+                do {
+                    state.pending = false;
+                    if (isGlobalPlaylistActive) {
+                        await advanceGlobalPlaylistForSlot(videoId);
+                    } else {
+                        await originalAdvancePlaylist(videoId);
+                    }
+                } while (state.pending);
+            })().finally(() => {
+                slotAdvanceStates.delete(videoId);
+            });
+
+            slotAdvanceStates.set(videoId, state);
+            return state.promise;
+        }
+
+        advancePlaylist = async function(videoId) {
+            await enqueueAdvancePlaylist(videoId);
         };
     </script>
 </body>

@@ -182,3 +182,19 @@
 - **Timestamp:** 2026-04-09T17:36:44+02:00
 - Evidence and repro notes: `docs/screenshots/live-v3-bughunt/README.md`
 - Curated screenshots: `docs/screenshots/live-v3-bughunt/`
+
+## Wave 8 (V3 mute/editor/retry bugfixes)
+
+- **Timestamp:** 2026-04-09T20:08:00+02:00
+- **Scope:** Minimal-risk fixes in `v3/index.html` for iframe-aware global mute control (YouTube/Vimeo API path), playlist editor stale-slot context invalidation + async apply guarding, and global advance retry/skip with per-tile in-flight coalescing.
+- **Files changed:**
+  - `v3/index.html`
+  - `docs/implementation-progress.md`
+
+## Validation Evidence
+
+- `node -e "const fs=require('fs');const html=fs.readFileSync('v3/index.html','utf8');const blocks=[...html.matchAll(/<script>([\\s\\S]*?)<\\/script>/g)];if(blocks.length===0){throw new Error('No inline script blocks found');}blocks.forEach((m,i)=>{new Function(m[1]);});console.log('inline-script-check: PASS ('+blocks.length+' block(s))');"` -> **PASS** (`inline-script-check: PASS (1 block(s))`)
+- Targeted local automation (Playwright, `file:///C:/gridplay-htown-custom/v3/index.html`) -> **PASS**
+  - iframe mute/API check: **PASS** (`supportedCount=1`, mute-on command calls observed, `enablejsapi=1` present in YouTube embed)
+  - playlist editor stale-context check: **PASS** (`contextCleared=true`, `staleWritePrevented=true`)
+  - global advance retry/coalescing check: **PASS** (`retriedToSuccess=true`, `coalesced=true`, `maxConcurrent=1`)

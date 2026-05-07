@@ -168,35 +168,6 @@
             background: #000;
         }
 
-        /* Hide video controls by default, show on hover */
-        .video-item video::-webkit-media-controls {
-            opacity: 0;
-            transition: opacity 0.3s ease;
-        }
-
-        .video-item:hover video::-webkit-media-controls {
-            opacity: 1;
-        }
-
-        .video-item video::-webkit-media-controls-enclosure {
-            opacity: 0;
-            transition: opacity 0.3s ease;
-        }
-
-        .video-item:hover video::-webkit-media-controls-enclosure {
-            opacity: 1;
-        }
-
-        /* Firefox */
-        .video-item video::-moz-media-controls {
-            opacity: 0;
-            transition: opacity 0.3s ease;
-        }
-
-        .video-item:hover video::-moz-media-controls {
-            opacity: 1;
-        }
-
         .video-remove {
             position: absolute;
             top: 10px;
@@ -220,72 +191,34 @@
             opacity: 1;
         }
 
-        /* Custom Video Controls Overlay */
-        .custom-video-controls {
-            position: absolute;
-            bottom: 0;
-            left: 0;
-            right: 0;
-            background: linear-gradient(transparent, rgba(0,0,0,0.8));
-            padding: 10px;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            opacity: 0;
-            transition: opacity 0.3s;
-            z-index: 10;
-        }
-
-        .video-item:hover .custom-video-controls {
-            opacity: 1;
-        }
-
-        .cv-btn {
-            background: none;
-            border: none;
-            color: white;
-            cursor: pointer;
-            font-size: 18px;
-            padding: 5px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .cv-spacer { flex: 1; }
-
-        .cv-volume {
-            width: 60px;
-            accent-color: #00bcd4;
-        }
-
         .tile-menu-shell {
             position: absolute;
             left: 50%;
             top: 50%;
             transform: translate(-50%, -50%);
             z-index: 15;
-            width: 0;
-            height: 0;
+            width: 164px;
+            height: 164px;
+            overflow: visible;
         }
 
         .tile-menu-main {
             position: absolute;
-            left: 0;
-            top: 0;
+            left: 50%;
+            top: 50%;
             transform: translate(-50%, -50%);
-            width: 40px;
-            height: 40px;
+            width: 56px;
+            height: 56px;
             border: 0;
             border-radius: 50%;
-            background: rgba(10, 18, 28, 0.78);
+            background: rgba(10, 18, 28, 0.86);
             color: #f6f9ff;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 16px;
+            font-size: 20px;
             cursor: pointer;
-            box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.14), 0 8px 18px rgba(0, 0, 0, 0.45);
+            box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.18), 0 10px 22px rgba(0, 0, 0, 0.48);
             transition: transform 0.15s ease, background 0.2s ease;
         }
 
@@ -302,16 +235,16 @@
             --offset-x: 0px;
             --offset-y: 0px;
             position: absolute;
-            left: 0;
-            top: 0;
-            width: 32px;
-            height: 32px;
+            left: 50%;
+            top: 50%;
+            width: 36px;
+            height: 36px;
             border: 0;
             border-radius: 50%;
-            transform: translate(-50%, -50%) translate(var(--offset-x), var(--offset-y)) scale(0.85);
+            transform: translate(-50%, -50%) translate(var(--offset-x), var(--offset-y)) scale(0.88);
             opacity: 0;
             pointer-events: none;
-            background: rgba(32, 42, 60, 0.92);
+            background: rgba(32, 42, 60, 0.94);
             color: #f0f6ff;
             font-size: 11px;
             font-weight: 700;
@@ -2735,15 +2668,9 @@
             }
 
             return `<div class="video-container" style="width:100%; height:100%; position:relative;">
-                <video autoplay muted preload="metadata" playsinline webkit-playsinline="true" style="width:100%; height:100%; object-fit:contain; outline: none;">
+                <video autoplay muted preload="metadata" playsinline webkit-playsinline="true" controls style="width:100%; height:100%; object-fit:contain; outline: none;">
                     <source src="${playbackSrc}" type="${playbackType}">
                 </video>
-                <div class="custom-video-controls">
-                    <button class="cv-btn play-pause">⏸</button>
-                    <div class="cv-spacer"></div>
-                    <button class="cv-btn mute-toggle">🔊</button>
-                    <input type="range" class="cv-volume" min="0" max="1" step="0.1" value="1">
-                </div>
             </div>`;
         }
 
@@ -4499,5 +4426,67 @@
             });
         }
     </script>
+<script>
+// Mobile Playlist Mode
+const isMobileDevice = () => {
+    const ua = navigator.userAgent || navigator.vendor || window.opera;
+    return /android|webos|iphone|ipad|ipot|blackberry|iemobile|opera mini/i.test(ua.toLowerCase())
+        || (window.innerWidth <= 768 && window.innerHeight > window.innerWidth);
+};
+let mobilePlaylistState = { enabled: isMobileDevice(), queue: [], currentIndex: 0, currentVideoId: null };
+function initMobilePlaylistMode() {
+    if (!mobilePlaylistState.enabled) return;
+    const p = document.createElement("div");
+    p.id = "mobile-playlist-panel";
+    p.innerHTML = `<div style="position:fixed;bottom:20px;right:20px;background:rgba(0,0,0,0.9);border:1px solid #00bcd4;border-radius:8px;padding:15px;max-width:280px;z-index:1500;color:white;"><div style="margin-bottom:10px;border-bottom:1px solid #444;padding-bottom:10px;"><b style="color:#00bcd4;">Mobile Playlist</b><div id="mq-info" style="font-size:12px;margin-top:5px;color:#aaa;">No queue</div></div><div style="display:flex;gap:8px;flex-direction:column;"><button id="mq-next" onclick="mobileNextVideo()" style="background:#00bcd4;color:black;border:0;padding:8px 12px;border-radius:4px;cursor:pointer;font-weight:bold;">▶ Next</button><button onclick="mobileToggleQueue()" style="background:#666;color:white;border:0;padding:8px 12px;border-radius:4px;cursor:pointer;font-size:12px;">Queue</button></div><div id="mq-list" style="display:none;margin-top:10px;max-height:200px;overflow-y:auto;font-size:11px;border-top:1px solid #444;padding-top:10px;"></div></div>`;
+    document.body.appendChild(p);
+}
+function mobileSetQueue(vids, id) {
+    if (!mobilePlaylistState.enabled) return;
+    mobilePlaylistState.queue = vids || [];
+    mobilePlaylistState.currentIndex = 0;
+    mobilePlaylistState.currentVideoId = id;
+    const info = document.getElementById("mq-info");
+    if (info) info.innerHTML = `Queue: ${mobilePlaylistState.queue.length}<br>At: ${mobilePlaylistState.currentIndex + 1}`;
+}
+async function mobileNextVideo() {
+    if (!mobilePlaylistState.enabled || !mobilePlaylistState.queue.length) return;
+    const item = mobilePlaylistState.queue[mobilePlaylistState.currentIndex];
+    if (!item) return;
+    const btn = document.getElementById("mq-next");
+    btn.disabled = true;
+    btn.textContent = "Loading...";
+    try {
+        let tid = mobilePlaylistState.currentVideoId;
+        if (!tid && window.videos && window.videos.length) tid = window.videos[0].id;
+        if (typeof loadSourceIntoSlot === "function") {
+            const ok = await loadSourceIntoSlot(tid, item.src, item.title, {forceHtml5:true, __suppressNotification:true});
+            mobilePlaylistState.currentIndex++;
+            const info = document.getElementById("mq-info");
+            if (info) info.innerHTML = `Queue: ${mobilePlaylistState.queue.length}<br>At: ${mobilePlaylistState.currentIndex + 1}`;
+            btn.textContent = ok ? "✓ Loaded!" : "✗ Failed";
+            setTimeout(() => { btn.textContent = "▶ Next"; btn.disabled = false; }, 1500);
+        }
+    } catch (e) { btn.textContent = "✗ Error"; setTimeout(() => { btn.textContent = "▶ Next"; btn.disabled = false; }, 1500); }
+}
+function mobileToggleQueue() {
+    const list = document.getElementById("mq-list");
+    if (list.style.display === "none") {
+        list.innerHTML = mobilePlaylistState.queue.map((v, i) => `<div style="padding:5px;color:${i === mobilePlaylistState.currentIndex ? '#00bcd4' : '#ccc'};">${i+1}. ${v.title || 'Video ' + (i+1)}</div>`).join("");
+        list.style.display = "block";
+    } else {
+        list.style.display = "none";
+    }
+}
+if (!window.setSlotPlaylist_original) {
+    window.setSlotPlaylist_original = window.setSlotPlaylist;
+    window.setSlotPlaylist = function(id, vids, loop) { 
+        window.setSlotPlaylist_original.call(this, id, vids, loop); 
+        if (mobilePlaylistState.enabled) mobileSetQueue(vids, id); 
+    };
+}
+document.readyState === "loading" ? document.addEventListener("DOMContentLoaded", initMobilePlaylistMode) : initMobilePlaylistMode();
+
+</script>
 </body>
 </html>

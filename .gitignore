@@ -6,3 +6,9 @@ dist/
 *.log
 .vscode/
 .idea/
+
+# Auth & local data
+data/
+pmvhaven-auth.json
+*.bak*
+

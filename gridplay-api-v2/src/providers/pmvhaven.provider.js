@@ -4,13 +4,27 @@ const { htmlDecode } = require('../../scrapers/shared');
 
 const PROVIDER_ID = 'pmvhaven';
 const DOMAINS = ['pmvhaven.com', 'www.pmvhaven.com'];
-const MEDIA_HOSTS = new Set(['video.pmvhaven.com']);
+const MEDIA_HOSTS = new Set([
+  'video.pmvhaven.com',
+  'storage.pmvhaven.com',
+  'pmvhavencloud.s3.eu-west-par.io.cloud.ovh.net'
+]);
+
+function isAllowedMediaHost(host) {
+  if (!host) return false;
+  const h = host.toLowerCase();
+  if (MEDIA_HOSTS.has(h)) return true;
+  if (h.endsWith('.io.cloud.ovh.net')) return true;
+  if (h.endsWith('.r2.cloudflarestorage.com')) return true;
+  if (h === 'pmvhaven.com' || h === 'www.pmvhaven.com') return true;
+  if (h === 'archive.org' || h.endsWith('.archive.org')) return true;
+  return false;
+}
 
 function validateMediaUrl(url) {
   const parsed = new URL(url);
   const host = parsed.hostname.toLowerCase();
-  const isArchiveHost = host === 'archive.org' || host.endsWith('.archive.org');
-  if (!MEDIA_HOSTS.has(host) && !isArchiveHost) {
+  if (!isAllowedMediaHost(host)) {
     throw new Error('Media host not allowlisted');
   }
   return parsed;
@@ -48,35 +62,70 @@ function getMediaType(parsedUrl) {
 
 function collectMediaCandidates(html) {
   const normalizedHtml = normalizeEscapes(html);
-  const rawMatches = normalizedHtml.match(/https:\/\/video\.pmvhaven\.com\/[\w\-./%?=&#+:,;~]+/gi) || [];
   const candidates = [];
   const seen = new Set();
 
-  for (const raw of rawMatches) {
+  function addCandidate(raw, hintRes = 0) {
     try {
       const parsed = validateMediaUrl(raw);
       const mediaType = getMediaType(parsed);
-      if (mediaType === 'other') continue;
+      if (mediaType === 'other') return;
 
       const normalized = parsed.toString();
-      if (seen.has(normalized)) continue;
+      if (seen.has(normalized)) return;
       seen.add(normalized);
+
+      const isPreview = normalized.includes('videoPreview') ||
+                        normalized.includes('_preview.mp4') ||
+                        normalized.includes('/previews/');
+
+      const resolution = hintRes || extractResolution(normalized);
+      const score = (isPreview ? 0 : 1000) + (mediaType === 'mp4' ? 10 : 5) + (resolution || 0);
 
       candidates.push({
         url: normalized,
-        resolution: extractResolution(normalized),
+        resolution,
         mediaType,
-        progressiveScore: mediaType === 'mp4' ? 1 : 0
+        isPreview,
+        progressiveScore: mediaType === 'mp4' ? 1 : 0,
+        score
       });
-    } catch (_) {
-      continue;
-    }
+    } catch (_) {}
   }
+
+  const nuxtMatch = normalizedHtml.match(/<script[^>]*id="__NUXT_DATA__"[^>]*>([\s\S]*?)<\/script>/i);
+  if (nuxtMatch && nuxtMatch[1]) {
+    try {
+      const nuxtArray = JSON.parse(nuxtMatch[1]);
+      for (let i = 0; i < nuxtArray.length; i++) {
+        const item = nuxtArray[i];
+        if (item && typeof item === 'object') {
+          if (typeof item.videoUrl === 'number' && typeof nuxtArray[item.videoUrl] === 'string') {
+            const height = typeof item.height === 'number' && typeof nuxtArray[item.height] === 'number'
+              ? nuxtArray[item.height] : (typeof item.height === 'number' ? item.height : 0);
+            addCandidate(nuxtArray[item.videoUrl], height);
+          }
+          if (typeof item.hlsMasterPlaylistUrl === 'number' && typeof nuxtArray[item.hlsMasterPlaylistUrl] === 'string') {
+            addCandidate(nuxtArray[item.hlsMasterPlaylistUrl], 1080);
+          }
+        }
+      }
+    } catch (_) {}
+  }
+
+  const regex = /https:\/\/[a-zA-Z0-9_\-.]+(?:pmvhaven\.com|io\.cloud\.ovh\.net|cloudflarestorage\.com)\/[a-zA-Z0-9_\-./%?=&#+:,;~]+?\.(?:mp4|m3u8)(?:\?[^\s"'<>\*]*)?/gi;
+  const matches = normalizedHtml.match(regex) || [];
+  for (const m of matches) addCandidate(m);
+
+  const legacyMatches = normalizedHtml.match(/https:\/\/video\.pmvhaven\.com\/[\w\-./%?=&#+:,;~]+/gi) || [];
+  for (const m of legacyMatches) addCandidate(m);
+
   return candidates;
 }
 
 function sortMediaCandidates(candidates) {
   candidates.sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score;
     if (b.progressiveScore !== a.progressiveScore) return b.progressiveScore - a.progressiveScore;
     if (b.resolution !== a.resolution) return b.resolution - a.resolution;
     return a.url.localeCompare(b.url);
@@ -191,14 +240,41 @@ async function resolvePlaylist(url, ctx = {}) {
   };
 }
 
+function getSavedAuthCookie() {
+  const fs = require('fs');
+  const path = require('path');
+  const possiblePaths = [
+    '/opt/gridplay-api/data/pmvhaven-auth.json',
+    path.join(__dirname, '../../../../gridplay-api/data/pmvhaven-auth.json'),
+    path.join(__dirname, '../../../gridplay-api/data/pmvhaven-auth.json')
+  ];
+  for (const p of possiblePaths) {
+    try {
+      if (fs.existsSync(p)) {
+        const raw = fs.readFileSync(p, 'utf8');
+        const parsed = JSON.parse(raw);
+        if (parsed && parsed.cookies) return parsed.cookies;
+      }
+    } catch (_) {}
+  }
+  return null;
+}
+
 async function defaultFetch(url, options = {}) {
+  const authCookie = getSavedAuthCookie();
+  const reqHeaders = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+    'Referer': 'https://pmvhaven.com/',
+    'Accept': 'text/html,application/xhtml+xml',
+    ...options.headers
+  };
+  if (authCookie) {
+    reqHeaders['Cookie'] = authCookie;
+  }
+
   const response = await fetch(url, {
     redirect: 'follow',
-    headers: {
-      'User-Agent': 'GridPlayV2/2.0 (+https://h-town.duckdns.org/gridplay/v2/)',
-      'Accept': 'text/html,application/xhtml+xml',
-      ...options.headers
-    },
+    headers: reqHeaders,
     signal: options.timeout ? AbortSignal.timeout(options.timeout) : undefined
   });
   if (!response.ok) throw new Error(`HTTP ${response.status}`);

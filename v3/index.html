@@ -777,6 +777,7 @@
                 <button class="btn" onclick="toggleSearchPlaylistModule()" style="background: #1abc9c;">Search Playlist v2</button>
                 <button class="btn" onclick="toggleGlobalPlaylistModule()" style="background: #e67e22;">Global Playlist</button>
                 <button class="btn" id="playlistEditorOpenBtn" onclick="openPlaylistEditorForCurrentContext()" style="background: #2c7a7b;">Playlist Editor</button>
+                <button class="btn" id="pmvhavenAuthBtn" onclick="togglePmvhavenAuthModule()" style="background: #e65100; font-weight: 500;">🔒 PMVHaven Login</button>
                 <button class="btn" id="globalMuteToggle" onclick="toggleGlobalMuteMode()" aria-pressed="false">Global Mute: OFF</button>
                 <button class="btn" onclick="saveConfig()" style="background: #2980b9;">Save</button>
                 <button class="btn" onclick="loadConfig()" style="background: #2980b9;">Load</button>
@@ -787,6 +788,72 @@
         </div>
 
         <div class="overlay" id="modalOverlay" onclick="closeAllModules()"></div>
+
+        <div class="module-container" id="pmvhavenAuthModule">
+            <div class="module-glass" style="max-width: 480px;">
+                <div class="module-header">
+                    <h3 style="display: flex; align-items: center; gap: 8px;">
+                        <span style="color: #ff9800;">🔒</span> PMVHaven Account Login
+                    </h3>
+                    <button class="close-btn" onclick="togglePmvhavenAuthModule()">×</button>
+                </div>
+                <div class="module-content">
+                    <div id="pmvhavenStatusBanner" style="padding: 12px 16px; border-radius: 8px; margin-bottom: 16px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); font-size: 13px; line-height: 1.5;">
+                        <div id="pmvhavenStatusText" style="display: flex; align-items: center; gap: 8px;">
+                            <span style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #9e9e9e;"></span>
+                            <span>Status: <strong>Nicht angemeldet</strong> (Gastmodus)</span>
+                        </div>
+                        <div id="pmvhavenUserDetails" style="margin-top: 6px; color: #aaa; font-size: 12px; display: none;"></div>
+                    </div>
+
+                    <div id="pmvhavenLoginForm">
+                        <p style="font-size: 12px; color: #aaa; margin-bottom: 12px; line-height: 1.5;">
+                            Melde dich mit deinem PMVHaven-Account an, um Rate-Limits zu umgehen und Videos ohne Ladeabbrüche in voller Qualität abzuspielen.
+                        </p>
+
+                        <div style="margin-bottom: 12px;">
+                            <label style="font-size: 12px; color: #ccc; display: block; margin-bottom: 4px;">PMVHaven Email:</label>
+                            <input type="email" id="pmvhavenEmailInput" class="module-input" placeholder="deine-email@example.com" style="margin-bottom: 0;">
+                        </div>
+
+                        <div style="margin-bottom: 12px;">
+                            <label style="font-size: 12px; color: #ccc; display: block; margin-bottom: 4px;">Passwort:</label>
+                            <input type="password" id="pmvhavenPasswordInput" class="module-input" placeholder="••••••••••••" style="margin-bottom: 0;">
+                        </div>
+
+                        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 16px;">
+                            <input type="checkbox" id="pmvhavenRememberMe" checked style="cursor: pointer;">
+                            <label for="pmvhavenRememberMe" style="font-size: 12px; color: #ccc; cursor: pointer;">Angemeldet bleiben (30 Tage)</label>
+                        </div>
+
+                        <div class="module-actions" style="margin-bottom: 12px;">
+                            <button class="btn" id="pmvhavenSubmitBtn" onclick="submitPmvhavenLogin()" style="background: #e65100; flex: 1; font-weight: bold;">
+                                Anmelden
+                            </button>
+                        </div>
+
+                        <details style="margin-top: 10px; font-size: 12px; color: #888;">
+                            <summary style="cursor: pointer; user-select: none; color: #00bcd4;">Erweitert: Session-Cookie manuell eingeben...</summary>
+                            <div style="margin-top: 8px; padding: 10px; background: rgba(0,0,0,0.3); border-radius: 6px;">
+                                <p style="font-size: 11px; color: #aaa; margin-bottom: 6px;">Füge hier deinen PMVHaven Cookie-String ein (z. B. <code>better-auth.session_token=...</code>):</p>
+                                <textarea id="pmvhavenCookieInput" class="module-input" placeholder="better-auth.session_token=..." style="height: 60px; font-size: 11px; margin-bottom: 8px;"></textarea>
+                                <button class="btn" onclick="submitPmvhavenCookie()" style="background: #00bcd4; font-size: 12px;">Cookie speichern</button>
+                            </div>
+                        </details>
+                    </div>
+
+                    <div id="pmvhavenLoggedInActions" style="display: none; margin-top: 12px;">
+                        <div style="display: flex; gap: 8px;">
+                            <button class="btn" onclick="verifyPmvhavenSession()" style="background: #27ae60; flex: 1;">Status prüfen</button>
+                            <button class="btn danger" onclick="submitPmvhavenLogout()" style="flex: 1;">Abmelden</button>
+                        </div>
+                    </div>
+
+                    <div id="pmvhavenAuthMsg" style="margin-top: 12px; font-size: 12px; display: none;"></div>
+                </div>
+            </div>
+        </div>
+
 
         <div class="module-container" id="globalPlaylistModule">
             <div class="module-glass">
@@ -3484,7 +3551,22 @@
             document.getElementById('pawgMixModule').style.display = 'none';
             document.getElementById('searchPlaylistModule').style.display = 'none';
             document.getElementById('globalPlaylistModule').style.display = 'none';
+            const authMod = document.getElementById('pmvhavenAuthModule');
+            if (authMod) authMod.style.display = 'none';
             document.getElementById('modalOverlay').style.display = 'none';
+        }
+
+        function togglePmvhavenAuthModule() {
+            const module = document.getElementById('pmvhavenAuthModule');
+            const overlay = document.getElementById('modalOverlay');
+            const isVisible = module.style.display === 'block';
+
+            closeAllModules();
+            if (!isVisible) {
+                module.style.display = 'block';
+                overlay.style.display = 'block';
+                checkPmvhavenAuthStatus();
+            }
         }
 
         function toggleGlobalPlaylistModule() {
@@ -4486,6 +4568,209 @@ if (!window.setSlotPlaylist_original) {
     };
 }
 document.readyState === "loading" ? document.addEventListener("DOMContentLoaded", initMobilePlaylistMode) : initMobilePlaylistMode();
+
+
+        // --- PMVHaven Auth Integration ---
+        let pmvhavenAuthState = { authenticated: false, user: null };
+
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function showAuthMessage(msg, type) {
+            const box = document.getElementById('pmvhavenAuthMsg');
+            if (!box) return;
+            box.style.display = 'block';
+            let color = '#ccc';
+            if (type === 'error') color = '#ff5252';
+            else if (type === 'success') color = '#69f0ae';
+            else if (type === 'warning') color = '#ffd740';
+            else if (type === 'info') color = '#40c4ff';
+            box.innerHTML = `<span style="color:${color};">${escapeHtml(msg)}</span>`;
+        }
+
+        async function checkPmvhavenAuthStatus() {
+            const btn = document.getElementById('pmvhavenAuthBtn');
+            const banner = document.getElementById('pmvhavenStatusBanner');
+            const statusText = document.getElementById('pmvhavenStatusText');
+            const userDetails = document.getElementById('pmvhavenUserDetails');
+            const loginForm = document.getElementById('pmvhavenLoginForm');
+            const loggedInActions = document.getElementById('pmvhavenLoggedInActions');
+
+            try {
+                const res = await fetch(`${GRIDPLAY_API_BASE}/auth/status`);
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const data = await res.json();
+                pmvhavenAuthState = data;
+
+                if (data.authenticated && data.user) {
+                    const u = data.user;
+                    const displayName = u.name || u.username || data.email || 'Benutzer';
+                    if (btn) {
+                        btn.innerHTML = `🟢 PMVHaven: <strong>${escapeHtml(displayName)}</strong>`;
+                        btn.style.background = '#2e7d32';
+                    }
+                    if (statusText) {
+                        statusText.innerHTML = `
+                            <span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:#4caf50;"></span>
+                            <span>Angemeldet als <strong>${escapeHtml(displayName)}</strong></span>
+                        `;
+                    }
+                    if (userDetails) {
+                        userDetails.style.display = 'block';
+                        userDetails.innerHTML = `
+                            <div>Email: ${escapeHtml(u.email || data.email || '-')}</div>
+                            ${data.updatedAt ? `<div>Zuletzt aktualisiert: ${new Date(data.updatedAt).toLocaleString()}</div>` : ''}
+                        `;
+                    }
+                    if (banner) {
+                        banner.style.background = 'rgba(46, 125, 50, 0.15)';
+                        banner.style.borderColor = 'rgba(76, 175, 80, 0.3)';
+                    }
+                    if (loginForm) loginForm.style.display = 'none';
+                    if (loggedInActions) loggedInActions.style.display = 'block';
+                } else {
+                    if (btn) {
+                        btn.innerHTML = `🔒 PMVHaven Login`;
+                        btn.style.background = '#e65100';
+                    }
+                    if (statusText) {
+                        statusText.innerHTML = `
+                            <span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:#9e9e9e;"></span>
+                            <span>Status: <strong>Nicht angemeldet</strong> (Gastmodus)</span>
+                        `;
+                    }
+                    if (userDetails) userDetails.style.display = 'none';
+                    if (banner) {
+                        banner.style.background = 'rgba(255, 255, 255, 0.05)';
+                        banner.style.borderColor = 'rgba(255, 255, 255, 0.1)';
+                    }
+                    if (loginForm) loginForm.style.display = 'block';
+                    if (loggedInActions) loggedInActions.style.display = 'none';
+                }
+            } catch (err) {
+                console.warn('Failed to fetch PMVHaven auth status:', err);
+            }
+        }
+
+        async function submitPmvhavenLogin() {
+            const emailInput = document.getElementById('pmvhavenEmailInput');
+            const passInput = document.getElementById('pmvhavenPasswordInput');
+            const rememberMe = document.getElementById('pmvhavenRememberMe')?.checked ?? true;
+            const submitBtn = document.getElementById('pmvhavenSubmitBtn');
+
+            const email = (emailInput?.value || '').trim();
+            const password = passInput?.value || '';
+
+            if (!email || !password) {
+                showAuthMessage('Bitte gib deine PMVHaven Email und dein Passwort ein.', 'error');
+                return;
+            }
+
+            if (submitBtn) {
+                submitBtn.disabled = true;
+                submitBtn.innerText = 'Anmelden...';
+            }
+            showAuthMessage('Verbinde mit PMVHaven...', 'info');
+
+            try {
+                const res = await fetch(`${GRIDPLAY_API_BASE}/auth/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password, rememberMe })
+                });
+
+                const data = await res.json();
+                if (!res.ok) {
+                    throw new Error(data.error || `Login fehlgeschlagen (HTTP ${res.status})`);
+                }
+
+                showAuthMessage('Erfolgreich angemeldet! Session gespeichert.', 'success');
+                if (passInput) passInput.value = '';
+                await checkPmvhavenAuthStatus();
+                if (typeof showNotification === 'function') {
+                    showNotification('PMVHaven Account erfolgreich verbunden!', 'success');
+                }
+            } catch (err) {
+                showAuthMessage(`Fehler: ${err.message}`, 'error');
+            } finally {
+                if (submitBtn) {
+                    submitBtn.disabled = false;
+                    submitBtn.innerText = 'Anmelden';
+                }
+            }
+        }
+
+        async function submitPmvhavenCookie() {
+            const cookieInput = document.getElementById('pmvhavenCookieInput');
+            const cookies = (cookieInput?.value || '').trim();
+            if (!cookies) {
+                showAuthMessage('Bitte füge einen Cookie-String ein.', 'error');
+                return;
+            }
+
+            showAuthMessage('Überprüfe Cookie bei PMVHaven...', 'info');
+            try {
+                const res = await fetch(`${GRIDPLAY_API_BASE}/auth/cookie`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ cookies })
+                });
+                const data = await res.json();
+                if (!res.ok) {
+                    throw new Error(data.error || 'Ungültiger Cookie');
+                }
+                showAuthMessage('Cookie erfolgreich gespeichert & verifiziert!', 'success');
+                if (cookieInput) cookieInput.value = '';
+                await checkPmvhavenAuthStatus();
+                if (typeof showNotification === 'function') {
+                    showNotification('PMVHaven Cookie erfolgreich aktiviert!', 'success');
+                }
+            } catch (err) {
+                showAuthMessage(`Fehler: ${err.message}`, 'error');
+            }
+        }
+
+        async function submitPmvhavenLogout() {
+            showAuthMessage('Melde ab...', 'info');
+            try {
+                await fetch(`${GRIDPLAY_API_BASE}/auth/logout`, { method: 'POST' });
+                showAuthMessage('Erfolgreich abgemeldet.', 'info');
+                await checkPmvhavenAuthStatus();
+                if (typeof showNotification === 'function') {
+                    showNotification('PMVHaven Account abgemeldet', 'info');
+                }
+            } catch (err) {
+                showAuthMessage(`Fehler beim Abmelden: ${err.message}`, 'error');
+            }
+        }
+
+        async function verifyPmvhavenSession() {
+            showAuthMessage('Prüfe aktive PMVHaven Session...', 'info');
+            try {
+                const res = await fetch(`${GRIDPLAY_API_BASE}/auth/verify`);
+                const data = await res.json();
+                if (data.authenticated) {
+                    showAuthMessage('Session ist aktiv und gültig!', 'success');
+                } else {
+                    showAuthMessage('Session ist nicht mehr aktiv oder abgelaufen.', 'warning');
+                }
+                await checkPmvhavenAuthStatus();
+            } catch (err) {
+                showAuthMessage(`Fehler: ${err.message}`, 'error');
+            }
+        }
+
+        // Initialize status check
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', checkPmvhavenAuthStatus);
+        } else {
+            checkPmvhavenAuthStatus();
+        }
+        // --- End PMVHaven Auth Integration ---
 
 </script>
 </body>

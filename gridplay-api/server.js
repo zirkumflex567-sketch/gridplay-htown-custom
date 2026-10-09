@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+const pmvhavenAuth = require('./pmvhaven-auth');
 'use strict';
 
 const http = require('http');
@@ -10,7 +11,22 @@ const { URL } = require('url');
 const HOST = process.env.HOST || '127.0.0.1';
 const PORT = Number(process.env.PORT || 3350);
 const PMVHAVEN_HOSTS = new Set(['pmvhaven.com', 'www.pmvhaven.com']);
-const MEDIA_HOSTS = new Set(['video.pmvhaven.com']);
+const MEDIA_HOSTS = new Set([
+    'video.pmvhaven.com',
+    'storage.pmvhaven.com',
+    'pmvhavencloud.s3.eu-west-par.io.cloud.ovh.net'
+]);
+
+function isAllowedMediaHost(host) {
+    if (!host) return false;
+    const h = host.toLowerCase();
+    if (MEDIA_HOSTS.has(h)) return true;
+    if (h.endsWith('.io.cloud.ovh.net')) return true;
+    if (h.endsWith('.r2.cloudflarestorage.com')) return true;
+    if (h === 'pmvhaven.com' || h === 'www.pmvhaven.com') return true;
+    if (h === 'archive.org' || h.endsWith('.archive.org')) return true;
+    return false;
+}
 const PLAYLIST_ID_PATH_REGEX = /\/playlists\/([a-f0-9]{24})(?:[/?#]|$)/i;
 const PAWG_CORE_KEYWORDS = [
     'pawg',
@@ -334,10 +350,7 @@ function validatePmvhavenPageUrl(rawUrl) {
 
 function validateUpstreamMediaUrl(rawUrl) {
     const parsed = getValidatedHttpsUrl(rawUrl);
-    const host = parsed.hostname.toLowerCase();
-
-    const isArchiveHost = host === 'archive.org' || host.endsWith('.archive.org');
-    if (!MEDIA_HOSTS.has(host) && !isArchiveHost) {
+    if (!isAllowedMediaHost(parsed.hostname)) {
         throw new Error('Upstream media host is not allowlisted.');
     }
 
@@ -384,40 +397,70 @@ function getMediaType(parsedUrl) {
 
 function collectMediaCandidates(html) {
     const normalizedHtml = normalizeEscapes(html);
-    const rawMatches = normalizedHtml.match(/https:\/\/video\.pmvhaven\.com\/[\w\-./%?=&#+:,;~]+/gi) || [];
     const candidates = [];
     const seen = new Set();
 
-    for (const raw of rawMatches) {
+    function addCandidate(raw, hintRes = 0) {
         try {
             const parsed = validateUpstreamMediaUrl(raw);
             const mediaType = getMediaType(parsed);
-            if (mediaType === 'other') {
-                continue;
-            }
+            if (mediaType === 'other') return;
 
             const normalized = parsed.toString();
-            if (seen.has(normalized)) {
-                continue;
-            }
-
+            if (seen.has(normalized)) return;
             seen.add(normalized);
+
+            const isPreview = normalized.includes('videoPreview') ||
+                              normalized.includes('_preview.mp4') ||
+                              normalized.includes('/previews/');
+
+            const resolution = hintRes || extractResolutionFromCandidate(normalized);
+            const score = (isPreview ? 0 : 1000) + (mediaType === 'mp4' ? 10 : 5) + (resolution || 0);
+
             candidates.push({
                 url: normalized,
-                resolution: extractResolutionFromCandidate(normalized),
+                resolution,
                 mediaType,
-                progressiveScore: mediaType === 'mp4' ? 1 : 0
+                isPreview,
+                progressiveScore: mediaType === 'mp4' ? 1 : 0,
+                score
             });
-        } catch (_) {
-            continue;
+        } catch (_) {}
+    }
+
+    const nuxtArray = extractNuxtPayloadArray(normalizedHtml);
+    if (Array.isArray(nuxtArray)) {
+        for (let i = 0; i < nuxtArray.length; i++) {
+            const item = nuxtArray[i];
+            if (item && typeof item === 'object') {
+                if (typeof item.videoUrl === 'number' && typeof nuxtArray[item.videoUrl] === 'string') {
+                    const height = typeof item.height === 'number' && typeof nuxtArray[item.height] === 'number'
+                        ? nuxtArray[item.height]
+                        : (typeof item.height === 'number' ? item.height : 0);
+                    addCandidate(nuxtArray[item.videoUrl], height);
+                }
+                if (typeof item.hlsMasterPlaylistUrl === 'number' && typeof nuxtArray[item.hlsMasterPlaylistUrl] === 'string') {
+                    addCandidate(nuxtArray[item.hlsMasterPlaylistUrl], 1080);
+                }
+            }
         }
     }
+
+    const regex = /https:\/\/[a-zA-Z0-9_\-.]+(?:pmvhaven\.com|io\.cloud\.ovh\.net|cloudflarestorage\.com)\/[a-zA-Z0-9_\-./%?=&#+:,;~]+?\.(?:mp4|m3u8)(?:\?[^\s"'<>\*]*)?/gi;
+    const matches = normalizedHtml.match(regex) || [];
+    for (const m of matches) addCandidate(m);
+
+    const legacyMatches = normalizedHtml.match(/https:\/\/video\.pmvhaven\.com\/[\w\-./%?=&#+:,;~]+/gi) || [];
+    for (const m of legacyMatches) addCandidate(m);
 
     return candidates;
 }
 
 function sortMediaCandidates(candidates) {
     candidates.sort((a, b) => {
+        if (b.score !== a.score) {
+            return b.score - a.score;
+        }
         if (b.progressiveScore !== a.progressiveScore) {
             return b.progressiveScore - a.progressiveScore;
         }
@@ -1099,12 +1142,19 @@ async function handleResolve(reqUrl, res) {
     }
 
     try {
+        const authHeader = await pmvhavenAuth.getAuthHeader();
+        const headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+            'Referer': 'https://pmvhaven.com/',
+            Accept: 'text/html,application/xhtml+xml'
+        };
+        if (authHeader) {
+            headers['Cookie'] = authHeader;
+        }
+
         const upstream = await fetch(pageUrl, {
             redirect: 'follow',
-            headers: {
-                'User-Agent': 'GridPlayResolver/1.0 (+https://h-town.duckdns.org/gridplay/)',
-                Accept: 'text/html,application/xhtml+xml'
-            }
+            headers
         });
 
         if (!upstream.ok) {
@@ -1140,12 +1190,19 @@ async function handlePlaylist(reqUrl, res) {
     }
 
     try {
+        const authHeader = await pmvhavenAuth.getAuthHeader();
+        const headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+            'Referer': 'https://pmvhaven.com/',
+            Accept: 'text/html'
+        };
+        if (authHeader) {
+            headers['Cookie'] = authHeader;
+        }
+
         const upstream = await fetch(playlistUrl, {
             redirect: 'follow',
-            headers: {
-                'User-Agent': 'GridPlayPlaylistExtractor/1.0',
-                Accept: 'text/html'
-            }
+            headers
         });
 
         if (!upstream.ok) {
@@ -1192,13 +1249,17 @@ async function handleStream(req, reqUrl, res) {
 
     try {
         const upstreamHost = mediaUrl.hostname.toLowerCase();
+        const authHeader = await pmvhavenAuth.getAuthHeader();
         const headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
             'Referer': 'https://pmvhaven.com/',
             'Accept': '*/*',
             'Origin': 'https://pmvhaven.com'
         };
-        if (MEDIA_HOSTS.has(upstreamHost)) {
+        if (authHeader) {
+            headers['Cookie'] = authHeader;
+        }
+        if (MEDIA_HOSTS.has(upstreamHost) || upstreamHost.endsWith('.io.cloud.ovh.net')) {
             headers.Referer = 'https://pmvhaven.com/';
         }
         const range = req.headers.range;
@@ -1345,6 +1406,85 @@ async function handleAdminLogs(reqUrl, res) {
     }
 }
 
+
+async function handleAuthStatus(res) {
+    try {
+        const auth = await pmvhavenAuth.loadAuth();
+        if (!auth || !auth.cookies) {
+            sendJson(res, 200, { authenticated: false, user: null });
+            return;
+        }
+        sendJson(res, 200, {
+            authenticated: true,
+            user: auth.user || null,
+            email: auth.email || null,
+            updatedAt: auth.updatedAt || null
+        });
+    } catch (e) {
+        sendJson(res, 500, { error: e.message });
+    }
+}
+
+async function handleAuthLogin(req, res) {
+    try {
+        const body = await readJsonBody(req);
+        const { email, password, rememberMe } = body;
+        if (!email || !password) {
+            sendJson(res, 400, { error: 'Email and password are required.' });
+            return;
+        }
+        const result = await pmvhavenAuth.loginWithEmail(email, password, rememberMe);
+        sendJson(res, 200, result);
+    } catch (e) {
+        sendJson(res, 401, { error: e.message || 'Login failed.' });
+    }
+}
+
+async function handleAuthCookie(req, res) {
+    try {
+        const body = await readJsonBody(req);
+        const { cookies } = body;
+        if (!cookies) {
+            sendJson(res, 400, { error: 'Cookie string is required.' });
+            return;
+        }
+        const result = await pmvhavenAuth.loginWithCookie(cookies);
+        sendJson(res, 200, result);
+    } catch (e) {
+        sendJson(res, 400, { error: e.message || 'Invalid cookie.' });
+    }
+}
+
+async function handleAuthLogout(res) {
+    try {
+        await pmvhavenAuth.clearAuth();
+        sendJson(res, 200, { ok: true });
+    } catch (e) {
+        sendJson(res, 500, { error: e.message });
+    }
+}
+
+async function handleAuthVerify(res) {
+    try {
+        const auth = await pmvhavenAuth.loadAuth();
+        if (!auth || !auth.cookies) {
+            sendJson(res, 200, { authenticated: false, user: null });
+            return;
+        }
+        const check = await pmvhavenAuth.checkSession(auth.cookies);
+        if (check.authenticated) {
+            auth.user = check.user;
+            auth.updatedAt = new Date().toISOString();
+            await pmvhavenAuth.saveAuth(auth);
+            sendJson(res, 200, { authenticated: true, user: check.user });
+        } else {
+            sendJson(res, 200, { authenticated: false, user: null, message: 'Session expired' });
+        }
+    } catch (e) {
+        sendJson(res, 500, { error: e.message });
+    }
+}
+
 const server = http.createServer(async (req, res) => {
     const reqUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
 
@@ -1371,6 +1511,31 @@ const server = http.createServer(async (req, res) => {
         return;
     }
 
+        if (reqUrl.pathname === '/auth/status' && req.method === 'GET') {
+        await handleAuthStatus(res);
+        return;
+    }
+
+    if (reqUrl.pathname === '/auth/login' && req.method === 'POST') {
+        await handleAuthLogin(req, res);
+        return;
+    }
+
+    if (reqUrl.pathname === '/auth/cookie' && req.method === 'POST') {
+        await handleAuthCookie(req, res);
+        return;
+    }
+
+    if (reqUrl.pathname === '/auth/logout' && req.method === 'POST') {
+        await handleAuthLogout(res);
+        return;
+    }
+
+    if (reqUrl.pathname === '/auth/verify' && req.method === 'GET') {
+        await handleAuthVerify(res);
+        return;
+    }
+
     if (req.method !== 'GET' && req.method !== 'HEAD') {
         sendJson(res, 405, { error: 'Method not allowed.' });
         return;
@@ -1380,6 +1545,8 @@ const server = http.createServer(async (req, res) => {
         sendJson(res, 200, { ok: true });
         return;
     }
+
+
 
     if (reqUrl.pathname === '/resolve' && req.method === 'GET') {
         await handleResolve(reqUrl, res);

@@ -198,13 +198,13 @@ function extractPlaylistItemsFromNuxt(table, playlistUrl) {
     if (seen.has(id.toLowerCase())) continue;
     seen.add(id.toLowerCase());
     const detail = detailById.get(id.toLowerCase()) || {};
-    const mediaUrl = detail.mediaUrl || null;
-    const mediaType = mediaUrl ? getMediaType(new URL(mediaUrl)) : null;
+    const mediaUrl = detail.mediaUrl || `https://pmvhaven.com/api/videos/${id}/download`;
+    const mediaType = detail.mediaUrl ? getMediaType(new URL(detail.mediaUrl)) : 'mp4';
     items.push({
       pageUrl: `https://pmvhaven.com/videos/${id}`,
       title: typeof detail.title === 'string' ? detail.title : null,
       mediaUrl, mediaType,
-      streamUrl: mediaUrl ? `/gridplay-api-v2/stream?url=${encodeURIComponent(mediaUrl)}` : null
+      streamUrl: `/gridplay-api-v2/stream?url=${encodeURIComponent(mediaUrl)}`
     });
   }
   return items;
@@ -231,8 +231,22 @@ async function resolveVideo(url, ctx = {}) {
 
   try {
     const html = await fetchHtml(url, { timeout });
-    const candidates = collectMediaCandidates(html);
-    const best = pickBestMedia(candidates);
+    let best;
+    try {
+      const candidates = collectMediaCandidates(html);
+      best = pickBestMedia(candidates);
+    } catch (err) {
+      const idMatch = url.match(/(?:[a-f0-9]{24})/i);
+      if (idMatch && getSavedAuthCookie()) {
+        best = {
+          url: `https://pmvhaven.com/api/videos/${idMatch[0]}/download`,
+          mediaType: 'mp4',
+          resolution: 1080
+        };
+      } else {
+        throw err;
+      }
+    }
 
     return {
       pageUrl: url,

@@ -83,3 +83,28 @@ test('inline v3 JavaScript syntax remains valid after UI changes', () => {
     if (match[1].trim()) assert.doesNotThrow(() => new vm.Script(match[1]));
   }
 });
+
+test('PMVHaven playlist without direct media URLs falls back to download stream endpoints', async () => {
+  const values = [];
+  values[0] = { [`playlist-initial-${playlistId}`]: 1 };
+  values[1] = { playlist: 2 };
+  values[2] = { videos: 3, videoDetails: 4 };
+  values[3] = [5];
+  values[4] = [];
+  values[5] = id1;
+  const noMediaFixture = '<html><script id="__NUXT_DATA__" type="application/json">' +
+    JSON.stringify(values) + '</script></html>';
+
+  const result = await pmv.resolvePlaylist(`https://pmvhaven.com/playlists/${playlistId}`,
+    { fetchHtml: async () => noMediaFixture });
+  assert.equal(result.total, 1);
+  assert.equal(result.items[0].mediaUrl, `https://pmvhaven.com/api/videos/${id1}/download`);
+  assert.equal(result.items[0].mediaType, 'mp4');
+  assert.match(result.items[0].streamUrl, /\/gridplay-api-v2\/stream\?url=/);
+});
+
+test('PMVHaven classifyUrl recognizes playlist URLs correctly', () => {
+  const classified = pmv.classifyUrl('https://pmvhaven.com/playlists/6ad98367daf0edc49ead0eff');
+  assert.equal(classified.kind, 'playlist');
+  assert.equal(classified.providerId, 'pmvhaven');
+});

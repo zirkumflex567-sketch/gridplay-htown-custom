@@ -433,9 +433,20 @@ async function handleStream(req, reqUrl, res) {
     };
     if (cookie) headers.Cookie = cookie;
     if (req.headers.range) headers.Range = req.headers.range;
-    const upstream = await fetch(mediaUrl, {
-      method: req.method, redirect: 'follow', headers, signal: AbortSignal.timeout(30000)
+    let fetchMethod = req.method;
+    if (fetchMethod === 'HEAD' && mediaUrl.pathname.includes('/download')) {
+      fetchMethod = 'GET';
+    }
+
+    let upstream = await fetch(mediaUrl, {
+      method: fetchMethod, redirect: 'follow', headers, signal: AbortSignal.timeout(30000)
     });
+
+    if (!upstream.ok && upstream.status !== 206 && req.method === 'HEAD') {
+      upstream = await fetch(mediaUrl, {
+        method: 'GET', redirect: 'follow', headers, signal: AbortSignal.timeout(30000)
+      });
+    }
     if (!upstream.ok && upstream.status !== 206) {
       return sendJson(res, upstream.status, { error: `Upstream returned HTTP ${upstream.status}.` });
     }

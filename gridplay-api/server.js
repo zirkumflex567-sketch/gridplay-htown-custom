@@ -1117,17 +1117,15 @@ function extractPlaylistItemsFromNuxt(html, playlistUrl) {
         const preferred = detail
             ? pickPreferredMediaFromList([detail.videoUrl, detail.hlsMasterPlaylistUrl])
             : null;
-        const mediaUrl = preferred ? preferred.url : null;
+        const mediaUrl = preferred ? preferred.url : `https://pmvhaven.com/api/videos/${id}/download`;
 
         return {
             id,
             title: detail && detail.title ? detail.title : null,
             pageUrl: `https://pmvhaven.com/videos/${id}`,
             mediaUrl,
-            streamUrl: mediaUrl
-                ? `/gridplay-api/stream?url=${encodeURIComponent(mediaUrl)}`
-                : null,
-            mediaType: preferred ? preferred.mediaType : null
+            streamUrl: `/gridplay-api/stream?url=${encodeURIComponent(mediaUrl)}`,
+            mediaType: preferred ? preferred.mediaType : 'mp4'
         };
     });
 }
@@ -1163,7 +1161,22 @@ async function handleResolve(reqUrl, res) {
         }
 
         const html = await upstream.text();
-        const picked = pickBestMediaUrl(html);
+        let picked;
+        try {
+            picked = pickBestMediaUrl(html);
+        } catch (pickErr) {
+            const idMatch = pageUrl.pathname.match(/(?:[a-f0-9]{24})/i);
+            if (idMatch && authHeader) {
+                picked = {
+                    mediaUrl: `https://pmvhaven.com/api/videos/${idMatch[0]}/download`,
+                    chosenResolution: 1080,
+                    chosenType: 'mp4',
+                    candidateCount: 1
+                };
+            } else {
+                throw pickErr;
+            }
+        }
         const mediaUrl = picked.mediaUrl;
         const streamUrl = `/gridplay-api/stream?url=${encodeURIComponent(mediaUrl)}`;
 
@@ -1272,11 +1285,24 @@ async function handleStream(req, reqUrl, res) {
             headers.Range = range;
         }
 
-        const upstream = await fetch(mediaUrl, {
-            method: req.method,
+        let fetchMethod = req.method;
+        if (fetchMethod === 'HEAD' && mediaUrl.pathname.includes('/download')) {
+            fetchMethod = 'GET';
+        }
+
+        let upstream = await fetch(mediaUrl, {
+            method: fetchMethod,
             redirect: 'follow',
             headers
         });
+
+        if (!upstream.ok && upstream.status !== 206 && req.method === 'HEAD') {
+            upstream = await fetch(mediaUrl, {
+                method: 'GET',
+                redirect: 'follow',
+                headers
+            });
+        }
 
         if (!upstream.ok && upstream.status !== 206) {
             sendJson(res, upstream.status, { error: `Upstream returned HTTP ${upstream.status}.` });

@@ -2563,6 +2563,20 @@
             return parsed.pathname.includes('/video/') || parsed.pathname.includes('/videos/');
         }
 
+        function isPmvhavenPlaylistUrl(url) {
+            const parsed = getNormalizedUrl(url);
+            if (!parsed) {
+                return false;
+            }
+
+            const host = parsed.hostname.toLowerCase();
+            if (host !== 'pmvhaven.com' && host !== 'www.pmvhaven.com') {
+                return false;
+            }
+
+            return /^\/playlists?\/[a-f0-9]{24}/i.test(parsed.pathname);
+        }
+
         function summarizeNonJsonResponse(rawText) {
             if (typeof rawText !== 'string' || rawText.trim().length === 0) {
                 return 'Received non-JSON response from server.';
@@ -2617,7 +2631,43 @@
             return payload;
         }
 
+        async function addPlaylistToGrid(url) {
+            showNotification('Lade Playlist von PMVHaven...', 'info');
+            try {
+                const response = await fetch(`${GRIDPLAY_API_BASE}/playlist?url=${encodeURIComponent(url)}`);
+                const data = await readApiJsonOrThrow(response, 'Konnte Playlist nicht laden');
+                const items = Array.isArray(data.items) ? data.items : [];
+                if (!items.length) {
+                    showNotification('Keine Videos in dieser Playlist gefunden.', 'warning');
+                    return;
+                }
+                let addedCount = 0;
+                for (const item of items) {
+                    const streamUrl = item.streamUrl || (item.mediaUrl ? `${GRIDPLAY_API_BASE}/stream?url=${encodeURIComponent(item.mediaUrl)}` : null);
+                    if (streamUrl) {
+                        addVideo(item.pageUrl || streamUrl, item.title || null, {
+                            forceHtml5: true,
+                            playbackSrc: streamUrl,
+                            mediaType: item.mediaType || 'mp4'
+                        });
+                        addedCount++;
+                    } else if (item.pageUrl) {
+                        await addVideoWithResolution(item.pageUrl, item.title || null);
+                        addedCount++;
+                    }
+                }
+                showNotification(`Playlist erkannt: ${addedCount} Videos hinzugefügt!`);
+            } catch (err) {
+                showNotification(`Fehler beim Laden der Playlist: ${err.message}`, 'error');
+            }
+        }
+
         async function addVideoWithResolution(src, name = null, options = {}) {
+            if (isPmvhavenPlaylistUrl(src)) {
+                await addPlaylistToGrid(src);
+                return;
+            }
+
             if (!isPmvhavenVideoUrl(src)) {
                 addVideo(src, name, options);
                 return;
@@ -2739,7 +2789,7 @@
             }
 
             return `<div class="video-container" style="width:100%; height:100%; position:relative;">
-                <video autoplay muted preload="metadata" playsinline webkit-playsinline="true" controls style="width:100%; height:100%; object-fit:contain; outline: none;">
+                <video autoplay muted preload="auto" playsinline webkit-playsinline="true" controls style="width:100%; height:100%; object-fit:contain; outline: none;" src="${playbackSrc}">
                     <source src="${playbackSrc}" type="${playbackType}">
                 </video>
             </div>`;
@@ -2807,6 +2857,19 @@
                     });
                 } else if (isHls && video.canPlayType('application/vnd.apple.mpegurl')) {
                     video.src = source.src;
+                } else {
+                    const targetSrc = (source && source.src) || video.src || (meta && meta.options && meta.options.playbackSrc);
+                    if (targetSrc && video.src !== targetSrc) {
+                        video.src = targetSrc;
+                    }
+                    if (video.hasAttribute('autoplay')) {
+                        const playPromise = video.play();
+                        if (playPromise !== undefined) {
+                            playPromise.catch(e => {
+                                console.warn("Autoplay prevented or pending:", e);
+                            });
+                        }
+                    }
                 }
 
                 video.addEventListener('loadedmetadata', function() {
@@ -3049,6 +3112,11 @@
 
         async function addFromInputSmart() {
             const raw = urlInput.value.trim();
+            if (isPmvhavenPlaylistUrl(raw)) {
+                urlInput.value = '';
+                await addPlaylistToGrid(raw);
+                return;
+            }
             const urls = parseLinkList(raw);
 
             if (urls.length === 0) {
@@ -3057,12 +3125,31 @@
             }
 
             if (urls.length === 1) {
+                if (isPmvhavenPlaylistUrl(urls[0])) {
+                    urlInput.value = '';
+                    await addPlaylistToGrid(urls[0]);
+                    return;
+                }
                 await addVideoWithResolution(urls[0]);
                 urlInput.value = '';
                 return;
             }
 
-            await addPlaylistFromInput();
+            const nonPlaylistUrls = [];
+            for (const u of urls) {
+                if (isPmvhavenPlaylistUrl(u)) {
+                    await addPlaylistToGrid(u);
+                } else {
+                    nonPlaylistUrls.push(u);
+                }
+            }
+            if (nonPlaylistUrls.length === 1) {
+                await addVideoWithResolution(nonPlaylistUrls[0]);
+            } else if (nonPlaylistUrls.length > 1) {
+                urlInput.value = nonPlaylistUrls.join('\n');
+                await addPlaylistFromInput();
+            }
+            urlInput.value = '';
         }
 
         function handleEmbedError(videoId) {

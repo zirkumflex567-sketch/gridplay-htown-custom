@@ -19,8 +19,9 @@ async function loadAuth() {
 
 async function saveAuth(data) {
     try {
-        await fs.mkdir(path.dirname(AUTH_FILE_PATH), { recursive: true });
-        await fs.writeFile(AUTH_FILE_PATH, JSON.stringify(data, null, 2), 'utf8');
+        await fs.mkdir(path.dirname(AUTH_FILE_PATH), { recursive: true, mode: 0o700 });
+        await fs.writeFile(AUTH_FILE_PATH, JSON.stringify(data, null, 2), { encoding: 'utf8', mode: 0o600 });
+        await fs.chmod(AUTH_FILE_PATH, 0o600);
         return true;
     } catch (e) {
         console.error('Failed to save PMVHaven auth file:', e.message);
@@ -119,18 +120,26 @@ async function loginWithEmail(email, password, rememberMe = true) {
         throw new Error(msg);
     }
 
+    // An HTTP 200 from the login endpoint is not enough: verify the resulting session.
+    if (!cookieString) {
+        throw new Error('PMVHaven hat keinen Session-Cookie zurückgegeben.');
+    }
     const check = await checkSession(cookieString);
-    const user = check.authenticated ? check.user : (body && body.user ? body.user : { email });
-
+    if (!check.authenticated) {
+        throw new Error('Anmeldung erfolgreich, aber keine gültige PMVHaven-Session erhalten.');
+    }
+    const user = check.user;
     const authData = {
         cookies: cookieString,
         user,
         email: email.trim(),
         updatedAt: new Date().toISOString()
     };
-    await saveAuth(authData);
+    if (!await saveAuth(authData)) {
+        throw new Error('PMVHaven-Session konnte nicht sicher gespeichert werden.');
+    }
 
-    return { ok: true, user, cookiesSaved: Boolean(cookieString) };
+    return { ok: true, user, cookiesSaved: true };
 }
 
 async function loginWithCookie(rawCookie) {
@@ -148,7 +157,9 @@ async function loginWithCookie(rawCookie) {
         user: check.user,
         updatedAt: new Date().toISOString()
     };
-    await saveAuth(authData);
+    if (!await saveAuth(authData)) {
+        throw new Error('PMVHaven-Session konnte nicht sicher gespeichert werden.');
+    }
 
     return { ok: true, user: check.user };
 }

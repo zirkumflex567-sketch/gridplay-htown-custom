@@ -158,24 +158,54 @@ function dereferenceNuxtValue(table, maybeRef) {
   return maybeRef;
 }
 
-function extractPlaylistItemsFromNuxt(payloadArray) {
-  if (!Array.isArray(payloadArray) || payloadArray.length < 2) return [];
+function extractPlaylistItemsFromNuxt(table, playlistUrl) {
+  if (!Array.isArray(table)) return [];
+  const matched = new URL(playlistUrl).pathname.match(/\/playlists\/([a-f\d]{24})(?:\/|$)/i);
+  if (!matched) return [];
+  const key = `playlist-initial-${matched[1].toLowerCase()}`;
+  const root = table.find(value => value && typeof value === 'object' &&
+    !Array.isArray(value) && Object.prototype.hasOwnProperty.call(value, key));
+  if (!root) return [];
+  const payload = dereferenceNuxtValue(table, root[key]);
+  const playlist = payload && dereferenceNuxtValue(table, payload.playlist);
+  const ids = playlist && dereferenceNuxtValue(table, playlist.videos);
+  if (!Array.isArray(ids)) return [];
+
+  const detailById = new Map();
+  const detailRefs = dereferenceNuxtValue(table, playlist.videoDetails);
+  for (const ref of (Array.isArray(detailRefs) ? detailRefs : [])) {
+    const detail = dereferenceNuxtValue(table, ref);
+    if (!detail || typeof detail !== 'object') continue;
+    const id = dereferenceNuxtValue(table, detail._id);
+    if (typeof id !== 'string' || !/^[a-f0-9]{24}$/i.test(id)) continue;
+    const videoUrl = dereferenceNuxtValue(table, detail.videoUrl);
+    const hlsUrl = dereferenceNuxtValue(table, detail.hlsMasterPlaylistUrl);
+    const candidate = [videoUrl, hlsUrl].find(url => {
+      try { return ['mp4','m3u8'].includes(getMediaType(validateMediaUrl(url))); }
+      catch (_) { return false; }
+    });
+    detailById.set(id.toLowerCase(), {
+      title: dereferenceNuxtValue(table, detail.title),
+      mediaUrl: candidate || null
+    });
+  }
+
   const items = [];
   const seen = new Set();
-
-  for (let i = 1; i < payloadArray.length; i++) {
-    const item = payloadArray[i];
-    if (!item || typeof item !== 'object') continue;
-    if (!item.url && !item.slug && !item.id) continue;
-
-    const url = item.url || (item.slug ? `/video/${item.slug}` : `/video/${item.id}`);
-    if (seen.has(url)) continue;
-    seen.add(url);
-
-    const title = item.title || item.name || 'Untitled';
-    const thumb = item.thumbnail || item.thumb || item.preview || '';
-    const duration = item.duration || 0;
-    items.push({ url: `https://pmvhaven.com${url}`, title, thumbnail: thumb, duration });
+  for (const ref of ids) {
+    const id = dereferenceNuxtValue(table, ref);
+    if (typeof id !== 'string' || !/^[a-f0-9]{24}$/i.test(id)) continue;
+    if (seen.has(id.toLowerCase())) continue;
+    seen.add(id.toLowerCase());
+    const detail = detailById.get(id.toLowerCase()) || {};
+    const mediaUrl = detail.mediaUrl || null;
+    const mediaType = mediaUrl ? getMediaType(new URL(mediaUrl)) : null;
+    items.push({
+      pageUrl: `https://pmvhaven.com/videos/${id}`,
+      title: typeof detail.title === 'string' ? detail.title : null,
+      mediaUrl, mediaType,
+      streamUrl: mediaUrl ? `/gridplay-api-v2/stream?url=${encodeURIComponent(mediaUrl)}` : null
+    });
   }
   return items;
 }
@@ -228,13 +258,7 @@ async function resolvePlaylist(url, ctx = {}) {
 
   return {
     pageUrl: url,
-    items: items.map(item => ({
-      pageUrl: item.url,
-      title: item.title,
-      thumbnail: item.thumbnail,
-      duration: item.duration,
-      source: PROVIDER_ID
-    })),
+    items: items.map(item => ({ ...item, source: PROVIDER_ID })),
     total: items.length,
     resolverPath: ['provider', 'pmvhaven', 'nuxt-playlist']
   };
@@ -244,13 +268,14 @@ function getSavedAuthCookie() {
   const fs = require('fs');
   const path = require('path');
   const possiblePaths = [
+    process.env.PMVHAVEN_AUTH_PATH,
     '/opt/gridplay-api/data/pmvhaven-auth.json',
     path.join(__dirname, '../../../../gridplay-api/data/pmvhaven-auth.json'),
     path.join(__dirname, '../../../gridplay-api/data/pmvhaven-auth.json')
   ];
   for (const p of possiblePaths) {
     try {
-      if (fs.existsSync(p)) {
+      if (p && fs.existsSync(p)) {
         const raw = fs.readFileSync(p, 'utf8');
         const parsed = JSON.parse(raw);
         if (parsed && parsed.cookies) return parsed.cookies;

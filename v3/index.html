@@ -191,118 +191,17 @@
             opacity: 1;
         }
 
-        .tile-menu-shell {
-            position: absolute;
-            left: 50%;
-            top: 50%;
-            transform: translate(-50%, -50%);
-            z-index: 15;
-            width: 164px;
-            height: 164px;
-            overflow: visible;
-        }
-
-        .tile-menu-main {
-            position: absolute;
-            left: 50%;
-            top: 50%;
-            transform: translate(-50%, -50%);
-            width: 56px;
-            height: 56px;
-            border: 0;
-            border-radius: 50%;
-            background: rgba(10, 18, 28, 0.86);
-            color: #f6f9ff;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 20px;
-            cursor: pointer;
-            box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.18), 0 10px 22px rgba(0, 0, 0, 0.48);
-            transition: transform 0.15s ease, background 0.2s ease;
-        }
-
-        .tile-menu-main:hover {
-            transform: translate(-50%, -50%) scale(1.06);
-            background: rgba(16, 29, 42, 0.9);
-        }
-
-        .tile-menu-main:active {
-            transform: translate(-50%, -50%) scale(0.96);
-        }
-
-        .tile-radial-action {
-            --offset-x: 0px;
-            --offset-y: 0px;
-            position: absolute;
-            left: 50%;
-            top: 50%;
-            width: 36px;
-            height: 36px;
-            border: 0;
-            border-radius: 50%;
-            transform: translate(-50%, -50%) translate(var(--offset-x), var(--offset-y)) scale(0.88);
-            opacity: 0;
-            pointer-events: none;
-            background: rgba(32, 42, 60, 0.94);
-            color: #f0f6ff;
-            font-size: 11px;
-            font-weight: 700;
-            cursor: pointer;
-            box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.12), 0 5px 12px rgba(0, 0, 0, 0.38);
-            transition: transform 0.16s ease, opacity 0.16s ease, background 0.2s ease, box-shadow 0.2s ease;
-        }
-
-        .tile-menu-shell.open .tile-radial-action {
-            opacity: 1;
-            pointer-events: auto;
-            transform: translate(-50%, -50%) translate(var(--offset-x), var(--offset-y)) scale(1);
-        }
-
-        .tile-radial-action:hover {
-            background: rgba(45, 62, 87, 0.95);
-        }
-
-        .tile-radial-action.active {
-            background: rgba(23, 118, 95, 0.92);
-            box-shadow: 0 0 0 1px rgba(104, 231, 188, 0.5), 0 0 12px rgba(54, 210, 156, 0.45);
-        }
-
-        .tile-radial-action.quality-low {
-            box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.12), 0 4px 10px rgba(0, 0, 0, 0.35);
-        }
-
-        .tile-radial-action.quality-medium {
-            box-shadow: 0 0 8px rgba(64, 201, 255, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.22), 0 4px 10px rgba(0, 0, 0, 0.35);
-        }
-
-        .tile-radial-action.quality-high {
-            box-shadow: 0 0 16px rgba(85, 223, 255, 0.75), 0 0 0 1px rgba(255, 255, 255, 0.3), 0 4px 10px rgba(0, 0, 0, 0.35);
-        }
-
-        .tile-menu-hint {
-            position: absolute;
-            left: 0;
-            top: 0;
-            transform: translate(-50%, 30px);
-            min-width: 130px;
-            max-width: 190px;
-            padding: 6px 8px;
-            border-radius: 8px;
-            background: rgba(10, 16, 24, 0.9);
-            border: 1px solid rgba(180, 222, 255, 0.25);
-            color: #d8efff;
-            font-size: 11px;
-            line-height: 1.25;
-            text-align: center;
-            opacity: 0;
-            pointer-events: none;
-            transition: opacity 0.16s ease;
-            white-space: normal;
-        }
-
-        .tile-menu-hint.visible {
-            opacity: 1;
+        /* Hide all round control widgets */
+        .tile-menu-shell,
+        .tile-menu-main,
+        .tile-radial-action,
+        .tile-menu-hint,
+        #globalMenuBtn,
+        .global-radial-menu,
+        .global-radial-shell {
+            display: none !important;
+            visibility: hidden !important;
+            pointer-events: none !important;
         }
 
         .grid-1 { grid-template-columns: 1fr; }
@@ -601,98 +500,6 @@
             display: block;
         }
 
-        /* Global Movable Menu Button */
-        #globalMenuBtn {
-            position: fixed;
-            z-index: 3000;
-            width: 54px;
-            height: 54px;
-            border-radius: 50%;
-            background: rgba(15, 23, 36, 0.9);
-            backdrop-filter: blur(8px);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            color: white;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 24px;
-            cursor: grab;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.6);
-            transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-            user-select: none;
-        }
-
-        #globalMenuBtn:hover {
-            background: rgba(25, 35, 50, 0.98);
-            transform: scale(1.08);
-        }
-
-        #globalMenuBtn:active {
-            cursor: grabbing;
-        }
-
-        .global-radial-menu {
-            position: absolute;
-            left: 50%;
-            top: 50%;
-            width: 0;
-            height: 0;
-            pointer-events: none;
-            display: none;
-        }
-
-        .global-radial-menu.open {
-            display: block;
-            pointer-events: auto;
-        }
-
-        .radial-btn {
-            position: absolute;
-            width: 38px;
-            height: 38px;
-            border-radius: 50%;
-            background: #2c3e50;
-            border: 1px solid rgba(255,255,255,0.25);
-            color: #ecf0f1;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 13px;
-            font-weight: bold;
-            cursor: pointer;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.4);
-            transition: transform 0.2s, background 0.2s, opacity 0.2s;
-            opacity: 0;
-            transform: translate(-50%, -50%) scale(0.5);
-        }
-
-        .radial-btn.visible {
-            opacity: 1;
-            transform: translate(-50%, -50%) translate(var(--dx), var(--dy)) scale(1);
-        }
-
-        .radial-btn:hover {
-            background: #34495e;
-            transform: translate(-50%, -50%) translate(var(--dx), var(--dy)) scale(1.1);
-        }
-
-        .tooltip-hint {
-            position: absolute;
-            bottom: -35px;
-            background: rgba(0,0,0,0.85);
-            padding: 4px 10px;
-            border-radius: 4px;
-            font-size: 11px;
-            white-space: nowrap;
-            opacity: 0;
-            transition: opacity 0.2s;
-            pointer-events: none;
-        }
-
-        #globalMenuBtn:hover .tooltip-hint {
-            opacity: 1;
-        }
-
         /* Slot specific colored borders */
         .video-item.hover-slot-1 { border-color: #27ae60 !important; box-shadow: 0 0 15px rgba(39, 174, 96, 0.4) !important; }
         .video-item.hover-slot-2 { border-color: #e74c3c !important; box-shadow: 0 0 15px rgba(231, 76, 60, 0.4) !important; }
@@ -700,51 +507,6 @@
         .video-item.hover-slot-4 { border-color: #f1c40f !important; box-shadow: 0 0 15px rgba(241, 196, 15, 0.4) !important; }
         .video-item.hover-slot-5 { border-color: #9b59b6 !important; box-shadow: 0 0 15px rgba(155, 89, 182, 0.4) !important; }
         .video-item.hover-slot-6 { border-color: #e67e22 !important; box-shadow: 0 0 15px rgba(230, 126, 34, 0.4) !important; }
-
-        /* Floating Global Menu Button */
-        #globalMenuBtn {
-            position: fixed;
-            z-index: 3000;
-            width: 50px;
-            height: 50px;
-            border-radius: 50%;
-            background: rgba(10, 18, 28, 0.85);
-            backdrop-filter: blur(5px);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            color: white;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 20px;
-            cursor: grab;
-            box-shadow: 0 8px 32px rgba(0,0,0,0.6);
-            transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275), background 0.2s;
-            user-select: none;
-            left: 50%;
-            bottom: 30px;
-        }
-
-        #globalMenuBtn:hover {
-            background: rgba(16, 29, 42, 0.95);
-            transform: scale(1.1);
-        }
-
-        #globalMenuBtn:active {
-            cursor: grabbing;
-        }
-
-        .global-radial-shell {
-            position: absolute;
-            left: 50%;
-            top: 50%;
-            width: 0;
-            height: 0;
-            pointer-events: none;
-        }
-
-        .global-radial-shell.open {
-            pointer-events: auto;
-        }
 
         .fs-reveal-zone {
             position: fixed;
@@ -772,6 +534,13 @@
             <input type="file" class="file-input" id="fileInput" accept="video/*" multiple>
             <button class="btn" onclick="document.getElementById('fileInput').click()">Upload Files</button>
             <div class="global-controls">
+                <select id="globalQualitySelect" class="btn" onchange="handleGlobalQualityChange(this.value)" style="background: #34495e; font-weight: bold; padding: 6px 10px; cursor: pointer;" title="Video Stream Quality">
+                    <option value="auto">Quality: Auto</option>
+                    <option value="1080">Quality: 1080p</option>
+                    <option value="720" selected>Quality: 720p (Empfohlen)</option>
+                    <option value="480">Quality: 480p</option>
+                    <option value="360">Quality: 360p</option>
+                </select>
                 <button class="btn" onclick="toggleBulkModule()" style="background: #20bf6b;">Import / Extract</button>
                 <button class="btn" onclick="togglePawgMixModule()" style="background: #8e44ad;">Generate PAWG Mix</button>
                 <button class="btn" onclick="toggleSearchPlaylistModule()" style="background: #1abc9c;">Search Playlist v2</button>
@@ -1317,303 +1086,85 @@
             tileMenuHintTimers.set(videoId, timer);
         }
 
-        function applyTileQuality(videoId, showFeedback = true) {
+        function getSavedQuality() {
+            return localStorage.getItem('gridplay_quality') || '720';
+        }
+
+        function applyQualityToHls(hls, qualityValue) {
+            if (!hls || !Array.isArray(hls.levels) || hls.levels.length === 0) return;
+            if (qualityValue === 'auto') {
+                hls.currentLevel = -1;
+                return;
+            }
+            const targetHeight = Number(qualityValue);
+            if (!Number.isFinite(targetHeight)) return;
+
+            let bestIndex = 0;
+            let bestDiff = Infinity;
+            hls.levels.forEach((lvl, idx) => {
+                const h = Number(lvl.height);
+                if (h > 0) {
+                    const diff = Math.abs(h - targetHeight);
+                    if (diff < bestDiff) {
+                        bestDiff = diff;
+                        bestIndex = idx;
+                    }
+                }
+            });
+            hls.nextLevel = bestIndex;
+            hls.currentLevel = bestIndex;
+        }
+
+        function applyQualityToVideo(video, qualityValue) {
+            if (!video || !video.hls) return;
+            applyQualityToHls(video.hls, qualityValue || getSavedQuality());
+        }
+
+        function handleGlobalQualityChange(val) {
+            localStorage.setItem('gridplay_quality', val);
+            const select = document.getElementById('globalQualitySelect');
+            if (select && select.value !== val) select.value = val;
+
+            document.querySelectorAll('.video-item video').forEach(v => {
+                applyQualityToVideo(v, val);
+            });
+            const label = val === 'auto' ? 'Auto (Adaptiv)' : `${val}p`;
+            showNotification(`Qualität auf ${label} gesetzt`, 'info');
+        }
+
+        function applyTileQuality(videoId, showFeedback = false) {
             const tile = document.getElementById(videoId);
-            const state = getTileMenuState(videoId);
-            if (!tile) {
-                return false;
-            }
-
+            if (!tile) return false;
             const video = tile.querySelector('video');
-            const hls = video && video.hls;
-            const levelLabel = getQualityLabel(state.quality);
-
-            if (!hls || !Array.isArray(hls.levels) || hls.levels.length === 0) {
-                if (showFeedback) {
-                    showTileMenuHint(videoId, `${levelLabel} quality saved for future HLS streams`);
-                }
-                return false;
+            if (video && video.hls) {
+                applyQualityToVideo(video, getSavedQuality());
+                return true;
             }
-
-            const selectedIndex = getClosestHlsLevelIndex(hls, state.quality);
-            if (selectedIndex < 0) {
-                if (showFeedback) {
-                    showTileMenuHint(videoId, `${levelLabel} quality unavailable for this stream`);
-                }
-                return false;
-            }
-
-            hls.nextLevel = selectedIndex;
-            hls.currentLevel = selectedIndex;
-
-            if (showFeedback) {
-                const selected = hls.levels[selectedIndex] || {};
-                const details = Number(selected.height) > 0 ? `${selected.height}p` : `Level ${selectedIndex + 1}`;
-                showTileMenuHint(videoId, `Quality: ${levelLabel} (${details})`);
-            }
-
-            return true;
+            return false;
         }
 
         function cycleTileQuality(videoId) {
-            const state = getTileMenuState(videoId);
-            const currentIndex = TILE_QUALITY_LEVELS.indexOf(state.quality);
-            const nextIndex = (currentIndex + 1) % TILE_QUALITY_LEVELS.length;
-            state.quality = TILE_QUALITY_LEVELS[nextIndex];
-            syncTileMenuState(videoId);
-            applyTileQuality(videoId, true);
+            const current = getSavedQuality();
+            const order = ['auto', '1080', '720', '480', '360'];
+            const idx = order.indexOf(current);
+            const next = order[(idx + 1) % order.length];
+            handleGlobalQualityChange(next);
         }
 
         function reloadTile(videoId) {
             const current = getTileEntry(videoId);
-            if (!current) {
-                return;
-            }
-
+            if (!current) return;
             loadSourceIntoSlot(videoId, current.src, current.name || null, {});
-            showTileMenuHint(videoId, 'Reloading source');
         }
 
-        function setTileMenuPosition(videoItem, shell, state) {
-            const bounds = videoItem.getBoundingClientRect();
-            const shellSize = 20;
-            const clampedX = clampNumber(state.xRatio, shellSize / Math.max(bounds.width, 1), 1 - (shellSize / Math.max(bounds.width, 1)));
-            const clampedY = clampNumber(state.yRatio, shellSize / Math.max(bounds.height, 1), 1 - (shellSize / Math.max(bounds.height, 1)));
-            state.xRatio = clampedX;
-            state.yRatio = clampedY;
-            shell.style.left = `${(clampedX * 100).toFixed(3)}%`;
-            shell.style.top = `${(clampedY * 100).toFixed(3)}%`;
-        }
-
-        function closeTileMenu(videoId) {
-            const tile = document.getElementById(videoId);
-            const state = getTileMenuState(videoId);
-            if (!tile) {
-                state.isOpen = false;
-                if (openTileMenuId === videoId) {
-                    openTileMenuId = '';
-                }
-                return;
-            }
-
-            const shell = tile.querySelector('.tile-menu-shell');
-            if (shell) {
-                shell.classList.remove('open');
-            }
-            state.isOpen = false;
-            if (openTileMenuId === videoId) {
-                openTileMenuId = '';
-            }
-        }
-
-        function closeOtherTileMenus(exceptVideoId) {
-            if (openTileMenuId && openTileMenuId !== exceptVideoId) {
-                closeTileMenu(openTileMenuId);
-            }
-        }
-
-        function syncTileMenuState(videoId) {
-            const tile = document.getElementById(videoId);
-            if (!tile) {
-                return;
-            }
-
-            const state = getTileMenuState(videoId);
-            const shell = tile.querySelector('.tile-menu-shell');
-            if (!shell) {
-                return;
-            }
-
-            shell.classList.toggle('open', state.isOpen);
-            if (state.isOpen) {
-                openTileMenuId = videoId;
-            }
-
-            const qualityBtn = shell.querySelector('[data-action="quality"]');
-            const favoriteBtn = shell.querySelector('[data-action="favorite"]');
-            const rememberBtn = shell.querySelector('[data-action="remember"]');
-            const item = getTileCurrentItem(videoId);
-
-            if (qualityBtn) {
-                qualityBtn.classList.remove('quality-low', 'quality-medium', 'quality-high');
-                qualityBtn.classList.add(`quality-${state.quality}`);
-                qualityBtn.title = `Quality: ${getQualityLabel(state.quality)} (click to cycle)`;
-            }
-
-            const currentSrc = item ? item.src : '';
-            if (favoriteBtn) {
-                favoriteBtn.classList.toggle('active', isTileItemStored(TILE_MENU_FAVORITES_KEY, currentSrc));
-            }
-            if (rememberBtn) {
-                rememberBtn.classList.toggle('active', isTileItemStored(TILE_MENU_REMEMBER_KEY, currentSrc));
-            }
-        }
+        function closeTileMenu(videoId) {}
+        function closeOtherTileMenus(exceptVideoId) {}
+        function syncTileMenuState(videoId) {}
 
         function bindTileMenu(videoItem) {
-            if (!videoItem || !videoItem.id) {
-                return;
-            }
-
-            const videoId = videoItem.id;
+            if (!videoItem) return;
             const existingShell = videoItem.querySelector('.tile-menu-shell');
-            if (existingShell) {
-                existingShell.remove();
-            }
-
-            const state = getTileMenuState(videoId);
-            const shell = document.createElement('div');
-            shell.className = 'tile-menu-shell';
-            shell.innerHTML = `
-                <button class="tile-radial-action" data-action="quality" title="Quality: Medium (click to cycle)" style="--offset-x: 0px; --offset-y: -52px;">Q</button>
-                <button class="tile-radial-action" data-action="reload" title="Reload source" style="--offset-x: 52px; --offset-y: 0px;">R</button>
-                <button class="tile-radial-action" data-action="next" title="Next playlist item" style="--offset-x: 38px; --offset-y: 38px;">N</button>
-                <button class="tile-radial-action" data-action="favorite" title="Toggle favorite" style="--offset-x: -38px; --offset-y: 38px;">F</button>
-                <button class="tile-radial-action" data-action="remember" title="Toggle remember" style="--offset-x: -52px; --offset-y: 0px;">M</button>
-                <button class="tile-menu-main" title="Shift+Left Click: move\nLeft Click: open menu\nRight Click: switch audio" aria-label="Tile action menu">◎</button>
-                <div class="tile-menu-hint" aria-hidden="true"></div>
-            `;
-
-            videoItem.appendChild(shell);
-            setTileMenuPosition(videoItem, shell, state);
-
-            const mainButton = shell.querySelector('.tile-menu-main');
-            const actionButtons = Array.from(shell.querySelectorAll('.tile-radial-action'));
-            let dragState = null;
-
-            mainButton.addEventListener('pointerdown', event => {
-                if (event.button !== 0 || !event.shiftKey) {
-                    return;
-                }
-
-                event.preventDefault();
-                event.stopPropagation();
-
-                const tileRect = videoItem.getBoundingClientRect();
-                dragState = {
-                    pointerId: event.pointerId,
-                    startX: event.clientX,
-                    startY: event.clientY,
-                    startRatioX: state.xRatio,
-                    startRatioY: state.yRatio,
-                    moved: false
-                };
-
-                mainButton.setPointerCapture(event.pointerId);
-            });
-
-            mainButton.addEventListener('pointermove', event => {
-                if (!dragState || event.pointerId !== dragState.pointerId) {
-                    return;
-                }
-
-                event.preventDefault();
-                event.stopPropagation();
-
-                const tileRect = videoItem.getBoundingClientRect();
-                const dx = event.clientX - dragState.startX;
-                const dy = event.clientY - dragState.startY;
-                const buttonHalf = 20;
-                const minX = buttonHalf;
-                const maxX = Math.max(tileRect.width - buttonHalf, minX);
-                const minY = buttonHalf;
-                const maxY = Math.max(tileRect.height - buttonHalf, minY);
-                const nextCenterX = clampNumber((dragState.startRatioX * tileRect.width) + dx, minX, maxX);
-                const nextCenterY = clampNumber((dragState.startRatioY * tileRect.height) + dy, minY, maxY);
-
-                state.xRatio = nextCenterX / Math.max(tileRect.width, 1);
-                state.yRatio = nextCenterY / Math.max(tileRect.height, 1);
-                state.justDragged = true;
-                dragState.moved = true;
-                setTileMenuPosition(videoItem, shell, state);
-            });
-
-            const endDrag = event => {
-                if (!dragState || event.pointerId !== dragState.pointerId) {
-                    return;
-                }
-
-                event.preventDefault();
-                event.stopPropagation();
-
-                if (mainButton.hasPointerCapture(event.pointerId)) {
-                    mainButton.releasePointerCapture(event.pointerId);
-                }
-
-                if (dragState.moved) {
-                    showTileMenuHint(videoId, 'Menu moved');
-                }
-                dragState = null;
-            };
-
-            mainButton.addEventListener('pointerup', endDrag);
-            mainButton.addEventListener('pointercancel', endDrag);
-
-            mainButton.addEventListener('click', event => {
-                event.preventDefault();
-                event.stopPropagation();
-
-                if (event.shiftKey || state.justDragged) {
-                    state.justDragged = false;
-                    return;
-                }
-
-                if (state.isOpen) {
-                    closeTileMenu(videoId);
-                } else {
-                    closeOtherTileMenus(videoId);
-                    state.isOpen = true;
-                }
-
-                syncTileMenuState(videoId);
-            });
-
-            mainButton.addEventListener('contextmenu', event => {
-                event.preventDefault();
-                event.stopPropagation();
-                switchActiveAudioToNext(videoId);
-            });
-
-            actionButtons.forEach(button => {
-                button.addEventListener('click', event => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    const action = button.dataset.action;
-
-                    if (action === 'quality') {
-                        cycleTileQuality(videoId);
-                        return;
-                    }
-
-                    if (action === 'reload') {
-                        reloadTile(videoId);
-                        closeTileMenu(videoId);
-                        return;
-                    }
-
-                    if (action === 'next') {
-                        if (!isGlobalPlaylistActive && !slotPlaylists.has(videoId)) {
-                            showTileMenuHint(videoId, 'No queued next item');
-                            return;
-                        }
-                        advancePlaylist(videoId);
-                        showTileMenuHint(videoId, 'Advancing to next item');
-                        closeTileMenu(videoId);
-                        return;
-                    }
-
-                    if (action === 'favorite') {
-                        toggleStoredTileItem(videoId, TILE_MENU_FAVORITES_KEY, 'Favorite');
-                        return;
-                    }
-
-                    if (action === 'remember') {
-                        toggleStoredTileItem(videoId, TILE_MENU_REMEMBER_KEY, 'Remember');
-                    }
-                });
-            });
-
-            syncTileMenuState(videoId);
-            applyTileQuality(videoId, false);
+            if (existingShell) existingShell.remove();
         }
 
         function clearAttemptTimers(state) {
@@ -2821,13 +2372,27 @@
                 const isHls = source && (source.type === 'application/x-mpegURL' || source.src.includes('.m3u8'));
                 
                 if (isHls && typeof Hls !== 'undefined' && Hls.isSupported()) {
-                    const hls = new Hls();
+                    if (video.hls) {
+                        try { video.hls.destroy(); } catch (_) {}
+                        video.hls = null;
+                    }
+                    const hlsConfig = {
+                        enableWorker: true,
+                        lowLatencyMode: false,
+                        backBufferLength: 15,          // Evict segments older than 15s to keep RAM flat
+                        maxBufferLength: 15,           // 15s buffer forward
+                        maxMaxBufferLength: 30,        // Cap max buffer to 30s
+                        maxBufferSize: 20 * 1000 * 1000, // 20 MB buffer limit per tile
+                        maxBufferHole: 0.5,
+                        highBufferWatchdogPeriod: 2
+                    };
+                    const hls = new Hls(hlsConfig);
                     hls.loadSource(source.src);
                     hls.attachMedia(video);
                     video.hls = hls;
                     
                     hls.on(Hls.Events.MANIFEST_PARSED, function() {
-                        applyTileQuality(videoId, false);
+                        applyQualityToVideo(video, getSavedQuality());
                         if (video.hasAttribute('autoplay')) {
                             video.play().catch(e => console.warn("Autoplay prevented:", e));
                         }
@@ -4482,28 +4047,19 @@
         let isDraggingMenu = false;
 
         function initV3UI() {
-            // Create Global Menu Button
-            const menuBtn = document.createElement('div');
-            menuBtn.id = 'globalMenuBtn';
-            menuBtn.innerHTML = `◎<div class="tooltip-hint">Shift+Drag: Move<br>Click: Actions</div>`;
-            document.body.appendChild(menuBtn);
-            
-            // Create Radial Menu Shell
-            const radialShell = document.createElement('div');
-            radialShell.className = 'global-radial-menu';
-            menuBtn.appendChild(radialShell);
-
-            // Create fs-reveal zone
+            // Create fs-reveal zone for fullscreen mode
             const revealZone = document.createElement('div');
             revealZone.className = 'fs-reveal-zone';
             document.body.appendChild(revealZone);
-
-            setupGlobalMenuInteraction(menuBtn, radialShell);
             setupHeaderHover(revealZone);
-            updateGlobalMenuPosition(menuBtn);
-            
+
             // Initial Grid Slot tagging
             refreshSlotDataAttributes();
+
+            // Initialize global quality setting
+            const savedQ = getSavedQuality();
+            const select = document.getElementById('globalQualitySelect');
+            if (select) select.value = savedQ;
         }
 
         function refreshSlotDataAttributes() {
@@ -4533,131 +4089,8 @@
             });
         }
 
-        function setupGlobalMenuInteraction(btn, shell) {
-            let startX, startY;
-
-            btn.addEventListener('mousedown', (e) => {
-                if (e.shiftKey) {
-                    isDraggingMenu = true;
-                    startX = e.clientX - globalMenuPos.x;
-                    startY = e.clientY - globalMenuPos.y;
-                    btn.classList.add('dragging');
-                    e.preventDefault();
-                }
-            });
-
-            window.addEventListener('mousemove', (e) => {
-                if (isDraggingMenu) {
-                    globalMenuPos.x = e.clientX - startX;
-                    globalMenuPos.y = e.clientY - startY;
-                    updateGlobalMenuPosition(btn);
-                }
-            });
-
-            window.addEventListener('mouseup', () => {
-                isDraggingMenu = false;
-                btn.classList.remove('dragging');
-            });
-
-            btn.addEventListener('click', (e) => {
-                if (e.shiftKey) return;
-                toggleRadialMenu(shell);
-            });
-        }
-
-        function updateGlobalMenuPosition(btn) {
-            btn.style.left = `${globalMenuPos.x}px`;
-            btn.style.top = `${globalMenuPos.y}px`;
-        }
-
-        function toggleRadialMenu(shell) {
-            const isOpen = shell.classList.toggle('open');
-            if (isOpen) {
-                renderRadialActions(shell);
-            }
-        }
-
-        function renderRadialActions(shell) {
-            shell.innerHTML = '';
-            const actions = [
-                { label: 'Q', title: 'Quality', color: '#3498db' },
-                { label: 'R', title: 'Reload', color: '#2ecc71' },
-                { label: 'X', title: 'Replace', color: '#e74c3c' },
-                { label: 'F', title: 'Favorite', color: '#f1c40f' },
-                { label: '★', title: 'Bookmark', color: '#e67e22' }
-            ];
-
-            // Calculate direction towards hovered video if available
-            let angleStart = -Math.PI / 2; // Default Up
-            if (lastHoveredSlot) {
-                const rect = lastHoveredSlot.getBoundingClientRect();
-                const targetX = rect.left + rect.width / 2;
-                const targetY = rect.top + rect.height / 2;
-                angleStart = Math.atan2(targetY - globalMenuPos.y, targetX - globalMenuPos.x);
-            }
-
-            const radius = 65;
-            const spread = Math.PI / 2.5;
-
-            actions.forEach((act, i) => {
-                const btn = document.createElement('div');
-                btn.className = 'radial-btn';
-                btn.innerHTML = act.label;
-                btn.title = act.title;
-                
-                const angle = angleStart - (spread / 2) + (i * (spread / (actions.length - 1)));
-                const dx = Math.cos(angle) * radius;
-                const dy = Math.sin(angle) * radius;
-                
-                btn.style.setProperty('--dx', `${dx}px`);
-                btn.style.setProperty('--dy', `${dy}px`);
-                
-                shell.appendChild(btn);
-                setTimeout(() => btn.classList.add('visible'), i * 40);
-
-                btn.onclick = (e) => {
-                    e.stopPropagation();
-                    handleRadialAction(act.title, lastHoveredSlot);
-                    shell.classList.remove('open');
-                };
-            });
-        }
-
-        function handleRadialAction(action, tile) {
-            if (!tile) {
-                showNotification('No video hovered', 'warning');
-                return;
-            }
-            const videoId = tile.id;
-            const videoData = videos.find(v => v.id === videoId);
-
-            switch(action) {
-                case 'Quality':
-                    cycleQuality(tile);
-                    break;
-                case 'Reload':
-                    if (videoData) updateVideoSlotContent(videoId, videoData.src);
-                    break;
-                case 'Replace':
-                    advancePlaylist(videoId);
-                    break;
-                case 'Favorite':
-                    showNotification(`Added to favorites: ${videoData?.name || videoId}`, 'success');
-                    break;
-            }
-        }
-
-        function cycleQuality(tile) {
-            const btn = document.querySelector('#globalMenuBtn .radial-btn[title="Quality"]');
-            const states = ['low', 'medium', 'high'];
-            let current = states.findIndex(s => tile.classList.contains(`quality-${s}`));
-            
-            states.forEach(s => tile.classList.remove(`quality-${s}`));
-            const next = (current + 1) % states.length;
-            tile.classList.add(`quality-${next === 0 ? 'low' : next === 1 ? 'medium' : 'high'}`);
-            
-            showNotification(`Quality set to ${states[next].toUpperCase()}`);
-        }
+        function handleRadialAction(action, tile) {}
+        function cycleQuality(tile) {}
 
         function toggleFullscreen() {
             if (!document.fullscreenElement) {

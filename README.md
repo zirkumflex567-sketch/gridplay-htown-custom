@@ -36,10 +36,15 @@ A powerful, intuitive multi-video grid player that lets you watch multiple video
 
 ## 🚀 Quick Start
 
-1. **Download** `gridplay.html` or clone this repository
-2. **Open** the HTML file in any modern browser
-3. **Drag & drop** video files or URLs onto the interface
-4. **Arrange** your perfect multi-video setup!
+### 💻 Local Run (Windows / Mac / Linux)
+1. **Windows**: Double-click `start.bat` (or run `./start.ps1` in PowerShell).
+2. **Terminal**: Run `npm start` (or `node server-local.js`).
+3. Opens `http://localhost:3350/v3/` automatically with local PMVHaven proxy and multi-grid playback!
+
+### 🌐 Direct Browser Use
+1. Clone this repository
+2. Open `v3/index.html` in any modern browser
+3. Drag & drop video files or URLs onto the interface
 
 ## 📖 How to Use
 

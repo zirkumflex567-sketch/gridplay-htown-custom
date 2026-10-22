@@ -1264,6 +1264,16 @@ async function handleStream(req, reqUrl, res) {
         return;
     }
 
+    const abortController = new AbortController();
+    const abortUpstream = () => {
+        try {
+            abortController.abort();
+        } catch (_) {}
+    };
+
+    req.on('close', abortUpstream);
+    res.on('close', abortUpstream);
+
     try {
         const upstreamHost = mediaUrl.hostname.toLowerCase();
         const authHeader = await pmvhavenAuth.getAuthHeader();
@@ -1293,14 +1303,16 @@ async function handleStream(req, reqUrl, res) {
         let upstream = await fetch(mediaUrl, {
             method: fetchMethod,
             redirect: 'follow',
-            headers
+            headers,
+            signal: abortController.signal
         });
 
         if (!upstream.ok && upstream.status !== 206 && req.method === 'HEAD') {
             upstream = await fetch(mediaUrl, {
                 method: 'GET',
                 redirect: 'follow',
-                headers
+                headers,
+                signal: abortController.signal
             });
         }
 
@@ -1384,9 +1396,29 @@ async function handleStream(req, reqUrl, res) {
             return;
         }
 
-        Readable.fromWeb(upstream.body).pipe(res);
+        const readable = Readable.fromWeb(upstream.body);
+        readable.on('error', (err) => {
+            abortUpstream();
+            if (!res.destroyed) res.destroy(err);
+        });
+        res.on('error', (err) => {
+            abortUpstream();
+            readable.destroy(err);
+        });
+        readable.pipe(res);
     } catch (error) {
-        sendJson(res, 502, { error: `Stream proxy failed: ${error.message}` });
+        abortUpstream();
+        if (error.name === 'AbortError') {
+            return;
+        }
+        if (!res.headersSent) {
+            sendJson(res, 502, { error: `Stream proxy failed: ${error.message}` });
+        } else {
+            res.destroy();
+        }
+    } finally {
+        req.off('close', abortUpstream);
+        res.off('close', abortUpstream);
     }
 }
 
@@ -1523,6 +1555,9 @@ async function handleAuthVerify(res) {
 
 const server = http.createServer(async (req, res) => {
     const reqUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+    if (reqUrl.pathname.startsWith('/gridplay-api/')) {
+        reqUrl.pathname = reqUrl.pathname.slice('/gridplay-api'.length);
+    }
 
     if (reqUrl.pathname === '/video-errors') {
         if (req.method === 'POST') {

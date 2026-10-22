@@ -424,6 +424,13 @@ async function handleStream(req, reqUrl, res) {
     return sendJson(res, 400, { error: error.message });
   }
 
+  const abortController = new AbortController();
+  const abortUpstream = () => {
+    try { abortController.abort(); } catch (_) {}
+  };
+  req.on('close', abortUpstream);
+  res.on('close', abortUpstream);
+
   try {
     const cookie = await pmvhavenCookieFor(mediaUrl.toString());
     const headers = {
@@ -439,12 +446,12 @@ async function handleStream(req, reqUrl, res) {
     }
 
     let upstream = await fetch(mediaUrl, {
-      method: fetchMethod, redirect: 'follow', headers, signal: AbortSignal.timeout(30000)
+      method: fetchMethod, redirect: 'follow', headers, signal: abortController.signal
     });
 
     if (!upstream.ok && upstream.status !== 206 && req.method === 'HEAD') {
       upstream = await fetch(mediaUrl, {
-        method: 'GET', redirect: 'follow', headers, signal: AbortSignal.timeout(30000)
+        method: 'GET', redirect: 'follow', headers, signal: abortController.signal
       });
     }
     if (!upstream.ok && upstream.status !== 206) {
@@ -488,15 +495,32 @@ async function handleStream(req, reqUrl, res) {
     }
     res.writeHead(upstream.status, responseHeaders);
     if (req.method === 'HEAD' || !upstream.body) return res.end();
-    Readable.fromWeb(upstream.body).pipe(res);
+    const readable = Readable.fromWeb(upstream.body);
+    readable.on('error', (err) => {
+      abortUpstream();
+      if (!res.destroyed) res.destroy(err);
+    });
+    res.on('error', (err) => {
+      abortUpstream();
+      readable.destroy(err);
+    });
+    readable.pipe(res);
   } catch (error) {
+    abortUpstream();
+    if (error.name === 'AbortError') return;
     if (!res.headersSent) sendJson(res, 502, { error: `Stream proxy failed: ${error.message}` });
     else res.destroy(error);
+  } finally {
+    req.off('close', abortUpstream);
+    res.off('close', abortUpstream);
   }
 }
 
 const server = http.createServer(async (req, res) => {
   const reqUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+  if (reqUrl.pathname.startsWith('/gridplay-api-v2/')) {
+    reqUrl.pathname = reqUrl.pathname.slice('/gridplay-api-v2'.length);
+  }
   if (!['GET', 'POST', 'HEAD'].includes(req.method)) return sendJson(res, 405, { error: 'Method not allowed.' });
   if (reqUrl.pathname === '/health') return sendJson(res, 200, { ok: true, service: 'gridplay-api-v2' });
   if (reqUrl.pathname === '/video-errors' && req.method === 'POST') return handleVideoErrors(req, res);

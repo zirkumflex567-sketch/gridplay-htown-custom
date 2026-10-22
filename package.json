@@ -1,0 +1,17 @@
+{
+  "name": "gridplay",
+  "version": "3.0.0",
+  "description": "GridPlay - Multi-video grid player with PMVHaven support",
+  "main": "server-local.js",
+  "scripts": {
+    "start": "node server-local.js",
+    "test": "node --test gridplay-api-v2/test/unit/*.test.js"
+  },
+  "keywords": [
+    "gridplay",
+    "video-grid",
+    "pmvhaven"
+  ],
+  "author": "",
+  "license": "MIT"
+}

@@ -2628,7 +2628,8 @@
                 addVideo(src, name, {
                     ...options,
                     forceHtml5: true,
-                    playbackSrc: resolved.streamUrl
+                    playbackSrc: resolved.streamUrl,
+                    mediaType: resolved.chosenType || resolved.mediaType
                 });
             } catch (error) {
                 addPmvhavenResolveError(src, name);
@@ -2668,7 +2669,10 @@
         function buildVideoMarkup(src, videoId, options = {}) {
             const playbackSrc = options.playbackSrc || src;
             const forceHtml5 = options.forceHtml5 === true;
-            const playbackType = playbackSrc.toLowerCase().includes('.m3u8')
+            const decodedPlaybackSrc = (() => {
+                try { return decodeURIComponent(playbackSrc); } catch (_) { return playbackSrc; }
+            })().toLowerCase();
+            const playbackType = options.mediaType === 'm3u8' || decodedPlaybackSrc.includes('.m3u8')
                 ? 'application/x-mpegURL'
                 : 'video/mp4';
 
@@ -2950,7 +2954,8 @@
                 updateVideoSlotContent(videoId, src, name, {
                     ...sanitizedOptions,
                     forceHtml5: true,
-                    playbackSrc: resolved.streamUrl
+                    playbackSrc: resolved.streamUrl,
+                    mediaType: resolved.chosenType || resolved.mediaType
                 });
                 return true;
             } catch (error) {
@@ -3432,115 +3437,144 @@
         initializePlaylistEditorIntegration();
         syncFullscreenUiState();
 
+        let extractedLinks = [];
+        let resolvedLinks = [];
+        let resolvedPlaylistMap = new Map();
+
+        function normalizedPlaylistStreamUrl(value) {
+            if (typeof value !== 'string' || !value) return null;
+            try {
+                const url = new URL(value, window.location.origin);
+                if (!['http:', 'https:'].includes(url.protocol)) return null;
+                // Never present an HTML watch page as a media download.
+                if (isPmvhavenVideoUrl(url.href)) return null;
+                return url.href;
+            } catch (_) {
+                return null;
+            }
+        }
+
+        function renderPlaylistDirectLinks(failed = []) {
+            const resultsArea = document.getElementById('playlistResults');
+            resolvedLinks = extractedLinks
+                .map(link => resolvedPlaylistMap.get(link))
+                .filter(Boolean);
+            resultsArea.value = resolvedLinks.join('\n') ||
+                'No playable links were resolved. Check account status and video permissions.';
+            if (failed.length) {
+                showNotification(`${failed.length} playlist videos could not be resolved (removed/private/expired).`, 'warning');
+            }
+            document.getElementById('copyLinksBtn').disabled = !resolvedLinks.length;
+            document.getElementById('addAllBtn').disabled = !resolvedLinks.length;
+        }
+
         async function extractPlaylist() {
             const urlInput = document.getElementById('playlistUrlInput');
             const resultsArea = document.getElementById('playlistResults');
             const url = urlInput.value.trim();
-            
             if (!url || !isValidUrl(url)) {
                 showNotification('Please enter a valid playlist URL', 'warning');
                 return;
             }
-
-            resultsArea.value = 'Fetching playlist content...';
-            document.getElementById('resolveAllBtn').disabled = true;
-            document.getElementById('copyLinksBtn').disabled = true;
-            document.getElementById('addAllBtn').disabled = true;
-
+            resultsArea.value = 'Fetching playlist and authenticated media links...';
+            for (const id of ['resolveAllBtn', 'copyLinksBtn', 'addAllBtn']) {
+                document.getElementById(id).disabled = true;
+            }
+            extractedLinks = [];
+            resolvedLinks = [];
+            resolvedPlaylistMap = new Map();
             try {
                 const response = await fetch(`${GRIDPLAY_API_BASE}/playlist?url=${encodeURIComponent(url)}`);
                 const data = await readApiJsonOrThrow(response, 'Failed to extract playlist');
-
-                if (data.links && data.links.length > 0) {
-                    extractedLinks = data.links;
-                    resultsArea.value = data.links.join('\n');
-                    showNotification(`Found ${data.links.length} video links!`);
-                    
-                    document.getElementById('resolveAllBtn').disabled = false;
-                    document.getElementById('copyLinksBtn').disabled = false;
-                    document.getElementById('addAllBtn').disabled = false;
-                } else {
-                    resultsArea.value = 'No video links found in this playlist.';
+                extractedLinks = [...new Set(Array.isArray(data.links) ? data.links : [])];
+                for (const item of (Array.isArray(data.items) ? data.items : [])) {
+                    if (!item || !extractedLinks.includes(item.pageUrl)) continue;
+                    const link = normalizedPlaylistStreamUrl(item.streamUrl);
+                    if (link) resolvedPlaylistMap.set(item.pageUrl, link);
                 }
+                if (!extractedLinks.length) {
+                    resultsArea.value = 'No videos found in this playlist (or playlist access denied).';
+                    return;
+                }
+                await resolveAllLinks();
             } catch (error) {
                 resultsArea.value = `Error: ${error.message}`;
                 showNotification(error.message, 'warning');
             }
         }
 
-        let extractedLinks = [];
-        let resolvedLinks = [];
-
         async function resolveAllLinks() {
-            if (extractedLinks.length === 0) return;
-
-            const resultsArea = document.getElementById('playlistResults');
+            if (!extractedLinks.length) return;
             const progress = document.getElementById('extractionProgress');
             const fill = document.getElementById('progressFill');
-            
+            const button = document.getElementById('resolveAllBtn');
             progress.style.display = 'block';
-            resolvedLinks = [];
-            resultsArea.value = 'Resolving direct links (this may take a while)...\n\n';
-            
-            document.getElementById('resolveAllBtn').disabled = true;
-            
-            for (let i = 0; i < extractedLinks.length; i++) {
-                const link = extractedLinks[i];
-                const percentage = ((i + 1) / extractedLinks.length) * 100;
-                fill.style.width = `${percentage}%`;
-
-                try {
-                    const resolved = await resolvePmvhavenUrl(link);
-                    if (resolved && resolved.streamUrl) {
-                        const directLink = window.location.origin + resolved.streamUrl;
-                        resolvedLinks.push(directLink);
-                        resultsArea.value += `${directLink}\n`;
+            button.disabled = true;
+            const missing = extractedLinks.filter(link => !resolvedPlaylistMap.has(link));
+            const failed = [];
+            let completed = 0;
+            // Limit concurrent PMVHaven page requests, preserving the original playlist order.
+            let next = 0;
+            async function worker() {
+                while (next < missing.length) {
+                    const link = missing[next++];
+                    try {
+                        const resolved = await resolvePmvhavenUrl(link);
+                        const direct = normalizedPlaylistStreamUrl(resolved.streamUrl);
+                        if (!direct) throw new Error('No media stream');
+                        resolvedPlaylistMap.set(link, direct);
+                    } catch (_) {
+                        failed.push(link);
+                    } finally {
+                        completed++;
+                        fill.style.width = `${missing.length ? completed / missing.length * 100 : 100}%`;
                     }
-                } catch (error) {
-                    resultsArea.value += `Failed: ${link}\n`;
                 }
-                
-                // Small delay to be respectful
-                await new Promise(r => setTimeout(r, 500));
             }
-            
-            showNotification(`Resolution complete! ${resolvedLinks.length} direct links found.`);
-            setTimeout(() => { progress.style.display = 'none'; fill.style.width = '0%'; }, 1000);
+            try {
+                await Promise.all(Array.from({ length: Math.min(3, missing.length) }, () => worker()));
+                renderPlaylistDirectLinks(failed);
+                showNotification(`${resolvedLinks.length}/${extractedLinks.length} playlist streams resolved.`);
+            } finally {
+                button.disabled = false;
+                progress.style.display = 'none';
+                fill.style.width = '0%';
+            }
         }
 
-        function copyLinks() {
-            const resultsArea = document.getElementById('playlistResults');
-            resultsArea.select();
-            document.execCommand('copy');
-            showNotification('Links copied to clipboard!');
+        async function copyLinks() {
+            if (!resolvedLinks.length) return;
+            try {
+                await navigator.clipboard.writeText(resolvedLinks.join('\n'));
+                showNotification('Playable stream links copied.');
+            } catch (_) {
+                const resultsArea = document.getElementById('playlistResults');
+                resultsArea.select();
+                document.execCommand('copy');
+                showNotification('Playable stream links copied.');
+            }
         }
 
         function clearResults() {
             document.getElementById('playlistResults').value = '';
             document.getElementById('playlistUrlInput').value = '';
-            document.getElementById('resolveAllBtn').disabled = true;
-            document.getElementById('copyLinksBtn').disabled = true;
-            document.getElementById('addAllBtn').disabled = true;
+            for (const id of ['resolveAllBtn', 'copyLinksBtn', 'addAllBtn']) {
+                document.getElementById(id).disabled = true;
+            }
             extractedLinks = [];
             resolvedLinks = [];
+            resolvedPlaylistMap = new Map();
         }
 
         async function addAllToGrid() {
-            const linksToAdd = resolvedLinks.length > 0 ? resolvedLinks : extractedLinks;
-            
-            if (linksToAdd.length === 0) return;
-            
-            showNotification(`Adding ${linksToAdd.length} videos to grid...`);
-            
-            for (const link of linksToAdd) {
-                // If they are already direct stream links, we can add them directly
-                if (link.includes('/stream?url=')) {
-                    addVideo(link, null, { forceHtml5: true });
-                } else {
-                    await addVideoWithResolution(link);
-                }
+            if (!resolvedLinks.length) {
+                showNotification('Resolve playlist media links first.', 'warning');
+                return;
             }
-            
+            for (const link of resolvedLinks) {
+                addVideo(link, null, { forceHtml5: true });
+            }
+            showNotification(`Added ${resolvedLinks.length} playable streams to grid.`);
             togglePlaylistModule();
         }
 
@@ -3841,7 +3875,7 @@
                     const postPayload = await readApiJsonOrThrow(postResponse, 'Failed to resolve search result');
                     return normalizeOutputUrl(
                         postPayload.url || postPayload.streamUrl || postPayload.playbackUrl || postPayload.mediaUrl || postPayload.resolvedUrl
-                    ) || normalizeOutputUrl(trimmedUrl);
+                    ) || (isPmvhavenVideoUrl(trimmedUrl) ? null : normalizeOutputUrl(trimmedUrl));
                 }
             } catch (_) {
                 // Fallback to GET variant
@@ -3853,13 +3887,14 @@
                     const getPayload = await readApiJsonOrThrow(getResponse, 'Failed to resolve search result');
                     return normalizeOutputUrl(
                         getPayload.url || getPayload.streamUrl || getPayload.playbackUrl || getPayload.mediaUrl || getPayload.resolvedUrl
-                    ) || normalizeOutputUrl(trimmedUrl);
+                    ) || (isPmvhavenVideoUrl(trimmedUrl) ? null : normalizeOutputUrl(trimmedUrl));
                 }
             } catch (_) {
                 // Fall through to raw URL
             }
 
-            return normalizeOutputUrl(trimmedUrl);
+            // Unresolved PMVHaven watch pages are HTML, not playable media.
+            return isPmvhavenVideoUrl(trimmedUrl) ? null : normalizeOutputUrl(trimmedUrl);
         }
 
         async function runSearchPlaylistV2() {
@@ -4017,11 +4052,30 @@
                     const data = await readApiJsonOrThrow(response, 'Failed to extract playlist');
 
                     if (Array.isArray(data.links) && data.links.length > 0) {
-                        bulkExtractedLinks = data.links;
-                        resultsArea.value = data.links.join('\n');
-                        document.getElementById('bulkAddAllBtn').disabled = false;
-                        document.getElementById('bulkCopyLinksBtn').disabled = false;
-                        showNotification(`Extracted ${data.links.length} links from playlist.`);
+                        const directByPage = new Map();
+                        for (const item of (Array.isArray(data.items) ? data.items : [])) {
+                            const playable = normalizedPlaylistStreamUrl(item && item.streamUrl);
+                            if (item && item.pageUrl && playable) directByPage.set(item.pageUrl, playable);
+                        }
+                        const unresolved = [...new Set(data.links)].filter(link => !directByPage.has(link));
+                        resultsArea.value = `Resolving ${unresolved.length} remaining playlist entries...`;
+                        let next = 0;
+                        async function resolveWorker() {
+                            while (next < unresolved.length) {
+                                const page = unresolved[next++];
+                                try {
+                                    const data = await resolvePmvhavenUrl(page);
+                                    const playable = normalizedPlaylistStreamUrl(data.streamUrl);
+                                    if (playable) directByPage.set(page, playable);
+                                } catch (_) { /* Unavailable videos are omitted, never treated as media. */ }
+                            }
+                        }
+                        await Promise.all(Array.from({ length: Math.min(3, unresolved.length) }, () => resolveWorker()));
+                        bulkExtractedLinks = [...new Set(data.links)].map(page => directByPage.get(page)).filter(Boolean);
+                        resultsArea.value = bulkExtractedLinks.join('\n') || 'No playable media could be resolved.';
+                        document.getElementById('bulkAddAllBtn').disabled = !bulkExtractedLinks.length;
+                        document.getElementById('bulkCopyLinksBtn').disabled = !bulkExtractedLinks.length;
+                        showNotification(`Resolved ${bulkExtractedLinks.length}/${data.links.length} playable playlist streams.`);
                     } else {
                         resultsArea.value = 'No video links found in this playlist.';
                         showNotification('No playlist links found', 'warning');

@@ -1,0 +1,32 @@
+name: PMVHaven media regressions
+on:
+  pull_request:
+    paths:
+      - 'gridplay-api/**'
+      - 'gridplay-api-v2/**'
+      - 'v3/index.html'
+      - '.github/workflows/pmvhaven-media.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'gridplay-api/**'
+      - 'gridplay-api-v2/**'
+      - 'v3/index.html'
+jobs:
+  node-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax check
+        run: |
+          node --check gridplay-api/server.js
+          node --check gridplay-api/pmvhaven-auth.js
+          node --check gridplay-api-v2/server.js
+          node --check gridplay-api-v2/src/providers/pmvhaven.provider.js
+          node --check gridplay-api-v2/src/resolver/resolver-chain.js
+      - name: Offline provider tests
+        run: npm run test:unit
+        working-directory: gridplay-api-v2

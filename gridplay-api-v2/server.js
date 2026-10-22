@@ -129,14 +129,33 @@ function pickBestMediaUrl(candidates) {
     .sort((a, b) => b.score - a.score)[0].url;
 }
 
+const PMVHAVEN_AUTH_PATH = process.env.PMVHAVEN_AUTH_PATH ||
+  path.resolve(__dirname, '../gridplay-api/data/pmvhaven-auth.json');
+const PMVHAVEN_HOSTS = new Set(['pmvhaven.com', 'www.pmvhaven.com']);
+const PMVHAVEN_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36';
+
+async function pmvhavenCookieFor(url) {
+  const host = new URL(url).hostname.toLowerCase();
+  if (host !== 'pmvhaven.com' && !host.endsWith('.pmvhaven.com')) return null;
+  try {
+    const auth = JSON.parse(await fs.readFile(PMVHAVEN_AUTH_PATH, 'utf8'));
+    return typeof auth.cookies === 'string' && auth.cookies ? auth.cookies : null;
+  } catch (_) {
+    return null;
+  }
+}
+
 async function fetchHtml(url, headers = {}) {
+  const cookie = await pmvhavenCookieFor(url);
   const response = await fetch(url, {
     redirect: 'follow',
     headers: {
-      'User-Agent': 'GridPlayV2/2.0 (+https://h-town.duckdns.org/gridplay/v2/)',
+      'User-Agent': cookie ? PMVHAVEN_AGENT : 'GridPlayV2/2.0',
       Accept: 'text/html,application/xhtml+xml',
+      ...(cookie ? { Cookie: cookie, Referer: 'https://pmvhaven.com/' } : {}),
       ...headers
-    }
+    },
+    signal: AbortSignal.timeout(15000)
   });
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
   return response.text();
@@ -272,14 +291,32 @@ async function handleResolve(req, reqUrl, res) {
 }
 
 async function handlePlaylist(reqUrl, res) {
-  const url = reqUrl.searchParams.get('url');
-  if (!url) return sendJson(res, 400, { error: 'url parameter is required.' });
-
+  const raw = reqUrl.searchParams.get('url');
+  if (!raw) return sendJson(res, 400, { error: 'url parameter is required.' });
+  let parsed;
   try {
-    const parsed = validatedHttps(url);
-    const html = await fetchHtml(parsed.toString());
-    const links = collectPlaylistLinksFromHtml(html);
-    sendJson(res, 200, { url: parsed.toString(), count: links.length, links });
+    parsed = validatedHttps(raw);
+    if (!PMVHAVEN_HOSTS.has(parsed.hostname.toLowerCase()) ||
+        !/^\/playlists\/[^/]+\/?$/i.test(parsed.pathname)) {
+      return sendJson(res, 400, { error: 'A PMVHaven playlist URL is required.' });
+    }
+  } catch (_) {
+    return sendJson(res, 400, { error: 'Invalid playlist URL.' });
+  }
+  try {
+    const provider = getProviderByDomain(parsed.hostname);
+    const playlist = await provider.resolvePlaylist(parsed.toString(), { fetchHtml });
+    const items = playlist.items || [];
+    const fallbackLinks = items.length ? [] : collectPlaylistLinksFromHtml(await fetchHtml(parsed.toString()));
+    const normalizedItems = items.length ? items :
+      fallbackLinks.map(pageUrl => ({ pageUrl, mediaUrl: null, streamUrl: null, source: 'pmvhaven' }));
+    sendJson(res, 200, {
+      url: parsed.toString(), count: normalizedItems.length,
+      links: normalizedItems.map(item => item.pageUrl),
+      resolvedCount: normalizedItems.filter(item => item.streamUrl).length,
+      streamLinks: normalizedItems.map(item => item.streamUrl).filter(Boolean),
+      items: normalizedItems
+    });
   } catch (error) {
     sendJson(res, 502, { error: `Playlist extraction failed: ${error.message}` });
   }
@@ -311,15 +348,19 @@ async function handlePawgMix(reqUrl, res) {
     const scraper = scrapersById.get('pmvhaven');
     const results = scraper.parseSearchResults(html).slice(0, count);
 
-    const items = results.map(item => ({
-      ...item,
-      playbackUrl: `/gridplay-api-v2/stream?url=${encodeURIComponent(item.pageUrl)}`,
-      streamUrl: `/gridplay-api-v2/stream?url=${encodeURIComponent(item.pageUrl)}`
-    }));
-
+    const items = [];
+    // A video page is HTML, never a stream URL. Resolve candidates before returning.
+    for (const item of results) {
+      try {
+        const resolved = await resolveUrl(item.pageUrl, { useEmbedFallback: false });
+        if (!resolved.mediaUrl || !['mp4', 'm3u8'].includes(resolved.mediaType)) continue;
+        const playbackUrl = resolved.streamUrl;
+        items.push({ ...item, mediaUrl: resolved.mediaUrl, mediaType: resolved.mediaType,
+          playbackUrl, streamUrl: playbackUrl });
+      } catch (_) {}
+    }
     sendJson(res, 200, {
-      mode,
-      count: items.length,
+      mode, count: items.length,
       breakdown: { pmvhaven: items.length, fallback: 0 },
       items
     });
@@ -371,32 +412,75 @@ function handleProviders(res) {
 async function handleStream(req, reqUrl, res) {
   const raw = reqUrl.searchParams.get('url');
   if (!raw) return sendJson(res, 400, { error: 'url query parameter is required.' });
-
   let mediaUrl;
   try {
     mediaUrl = validatedHttps(raw);
+    // Never proxy PMVHaven HTML pages as media: video tags cannot decode HTML.
+    if (PMVHAVEN_HOSTS.has(mediaUrl.hostname) &&
+        /^\/(videos?|playlists?)\//i.test(mediaUrl.pathname)) {
+      return sendJson(res, 422, { error: 'This is a video/playlist page. Resolve its media URL first.' });
+    }
   } catch (error) {
     return sendJson(res, 400, { error: error.message });
   }
 
   try {
-    const headers = { 'User-Agent': 'GridPlayV2Proxy/2.0', Referer: `${mediaUrl.protocol}//${mediaUrl.hostname}/` };
+    const cookie = await pmvhavenCookieFor(mediaUrl.toString());
+    const headers = {
+      'User-Agent': cookie ? PMVHAVEN_AGENT : 'GridPlayV2Proxy/2.0',
+      Referer: cookie ? 'https://pmvhaven.com/' : `${mediaUrl.protocol}//${mediaUrl.hostname}/`,
+      Accept: '*/*'
+    };
+    if (cookie) headers.Cookie = cookie;
     if (req.headers.range) headers.Range = req.headers.range;
-    const upstream = await fetch(mediaUrl, { method: req.method, redirect: 'follow', headers });
-    if (!upstream.ok && upstream.status !== 206) return sendJson(res, upstream.status, { error: `Upstream returned HTTP ${upstream.status}.` });
-
-    const keys = ['content-type', 'content-length', 'content-range', 'accept-ranges', 'cache-control', 'etag', 'last-modified', 'content-disposition'];
+    const upstream = await fetch(mediaUrl, {
+      method: req.method, redirect: 'follow', headers, signal: AbortSignal.timeout(30000)
+    });
+    if (!upstream.ok && upstream.status !== 206) {
+      return sendJson(res, upstream.status, { error: `Upstream returned HTTP ${upstream.status}.` });
+    }
+    const contentType = (upstream.headers.get('content-type') || '').toLowerCase();
+    if (contentType.includes('text/html')) {
+      return sendJson(res, 422, { error: 'Upstream returned HTML, not a video. Re-resolve the source URL.' });
+    }
+    const keys = ['content-type', 'content-length', 'content-range', 'accept-ranges',
+      'cache-control', 'etag', 'last-modified', 'content-disposition'];
     const responseHeaders = { 'X-GridPlay-Proxy': 'v2' };
     for (const key of keys) {
       const value = upstream.headers.get(key);
       if (value) responseHeaders[key] = value;
     }
-
+    const isHls = contentType.includes('mpegurl') || mediaUrl.pathname.toLowerCase().endsWith('.m3u8');
+    if (isHls && req.method !== 'HEAD') {
+      const manifest = await upstream.text();
+      const baseUrl = upstream.url || mediaUrl.toString();
+      const toProxy = uri => {
+        const target = new URL(uri, baseUrl);
+        if (target.protocol !== 'https:') throw new Error('Insecure HLS segment URL');
+        return `/gridplay-api-v2/stream?url=${encodeURIComponent(target.toString())}`;
+      };
+      const rewritten = manifest.split('\n').map(line => {
+        const trimmed = line.trim();
+        if (!trimmed) return line;
+        if (trimmed.startsWith('#')) {
+          return line.replace(/URI="([^"]+)"/g, (whole, uri) => {
+            try { return `URI="${toProxy(uri)}"`; } catch (_) { return whole; }
+          });
+        }
+        try { return toProxy(trimmed); } catch (_) { return line; }
+      }).join('\n');
+      const body = Buffer.from(rewritten, 'utf8');
+      responseHeaders['content-type'] = 'application/vnd.apple.mpegurl';
+      responseHeaders['content-length'] = String(body.length);
+      res.writeHead(upstream.status, responseHeaders);
+      return res.end(body);
+    }
     res.writeHead(upstream.status, responseHeaders);
     if (req.method === 'HEAD' || !upstream.body) return res.end();
     Readable.fromWeb(upstream.body).pipe(res);
   } catch (error) {
-    sendJson(res, 502, { error: `Stream proxy failed: ${error.message}` });
+    if (!res.headersSent) sendJson(res, 502, { error: `Stream proxy failed: ${error.message}` });
+    else res.destroy(error);
   }
 }
 

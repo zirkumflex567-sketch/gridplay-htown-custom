@@ -1184,6 +1184,10 @@ async function handlePlaylist(reqUrl, res) {
     let playlistUrl;
     try {
         playlistUrl = getValidatedHttpsUrl(reqUrl.searchParams.get('url'));
+        if (!PMVHAVEN_HOSTS.has(playlistUrl.hostname.toLowerCase()) ||
+            !/^\/playlists\/[^/]+\/?$/i.test(playlistUrl.pathname)) {
+            throw new Error('Only PMVHaven playlist URLs are supported.');
+        }
     } catch (error) {
         sendJson(res, 400, { error: error.message });
         return;
@@ -1256,7 +1260,8 @@ async function handleStream(req, reqUrl, res) {
             'Accept': '*/*',
             'Origin': 'https://pmvhaven.com'
         };
-        if (authHeader) {
+        // Never leak the PMVHaven session to unrelated storage/CDN hosts.
+        if (authHeader && (upstreamHost === 'pmvhaven.com' || upstreamHost.endsWith('.pmvhaven.com'))) {
             headers['Cookie'] = authHeader;
         }
         if (MEDIA_HOSTS.has(upstreamHost) || upstreamHost.endsWith('.io.cloud.ovh.net')) {
@@ -1414,9 +1419,14 @@ async function handleAuthStatus(res) {
             sendJson(res, 200, { authenticated: false, user: null });
             return;
         }
+        const check = await pmvhavenAuth.checkSession(auth.cookies);
+        if (!check.authenticated) {
+            sendJson(res, 200, { authenticated: false, user: null, message: 'Session expired or invalid.' });
+            return;
+        }
         sendJson(res, 200, {
             authenticated: true,
-            user: auth.user || null,
+            user: check.user,
             email: auth.email || null,
             updatedAt: auth.updatedAt || null
         });

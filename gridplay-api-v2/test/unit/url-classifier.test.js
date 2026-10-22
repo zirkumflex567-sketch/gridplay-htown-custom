@@ -1,9 +1,9 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert';
-import { classifyUrl, ProviderRegistry, createProviderRegistry } from '../src/providers/registry.js';
-import pmvhavenProvider from '../src/providers/pmvhaven.provider.js';
-import xvideosProvider from '../src/providers/xvideos.provider.js';
-import xhamsterProvider from '../src/providers/xhamster.provider.js';
+import { classifyUrl, ProviderRegistry, createProviderRegistry } from '../../src/providers/registry.js';
+import pmvhavenProvider from '../../src/providers/pmvhaven.provider.js';
+import xvideosProvider from '../../src/providers/xvideos.provider.js';
+import xhamsterProvider from '../../src/providers/xhamster.provider.js';
 
 describe('ProviderRegistry', () => {
   test('should register providers', () => {

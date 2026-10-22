@@ -44,10 +44,12 @@ function sleep(ms) {
 
 async function resolveWithProvider(url, provider, ctx) {
   const { fetchHtml, timeout = DEFAULT_TIMEOUT } = ctx;
-  const fetchFn = fetchHtml || defaultFetch;
+  // PMVHaven has a provider-specific fetcher that attaches the saved account session.
+  // Do not overwrite it with the generic unauthenticated HTML fetcher.
+  const fetchFn = fetchHtml || (provider.id === 'pmvhaven' ? null : defaultFetch);
 
   if (provider.resolveVideo) {
-    return await provider.resolveVideo(url, { ...ctx, fetchHtml: fetchFn, timeout });
+    return await provider.resolveVideo(url, { ...ctx, ...(fetchFn ? { fetchHtml: fetchFn } : {}), timeout });
   }
   throw new Error(`Provider ${provider.id} does not support resolveVideo`);
 }

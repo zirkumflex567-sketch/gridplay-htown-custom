@@ -3875,7 +3875,7 @@
                     const postPayload = await readApiJsonOrThrow(postResponse, 'Failed to resolve search result');
                     return normalizeOutputUrl(
                         postPayload.url || postPayload.streamUrl || postPayload.playbackUrl || postPayload.mediaUrl || postPayload.resolvedUrl
-                    ) || normalizeOutputUrl(trimmedUrl);
+                    ) || (isPmvhavenVideoUrl(trimmedUrl) ? null : normalizeOutputUrl(trimmedUrl));
                 }
             } catch (_) {
                 // Fallback to GET variant
@@ -3887,13 +3887,14 @@
                     const getPayload = await readApiJsonOrThrow(getResponse, 'Failed to resolve search result');
                     return normalizeOutputUrl(
                         getPayload.url || getPayload.streamUrl || getPayload.playbackUrl || getPayload.mediaUrl || getPayload.resolvedUrl
-                    ) || normalizeOutputUrl(trimmedUrl);
+                    ) || (isPmvhavenVideoUrl(trimmedUrl) ? null : normalizeOutputUrl(trimmedUrl));
                 }
             } catch (_) {
                 // Fall through to raw URL
             }
 
-            return normalizeOutputUrl(trimmedUrl);
+            // Unresolved PMVHaven watch pages are HTML, not playable media.
+            return isPmvhavenVideoUrl(trimmedUrl) ? null : normalizeOutputUrl(trimmedUrl);
         }
 
         async function runSearchPlaylistV2() {
@@ -4051,11 +4052,30 @@
                     const data = await readApiJsonOrThrow(response, 'Failed to extract playlist');
 
                     if (Array.isArray(data.links) && data.links.length > 0) {
-                        bulkExtractedLinks = data.links;
-                        resultsArea.value = data.links.join('\n');
-                        document.getElementById('bulkAddAllBtn').disabled = false;
-                        document.getElementById('bulkCopyLinksBtn').disabled = false;
-                        showNotification(`Extracted ${data.links.length} links from playlist.`);
+                        const directByPage = new Map();
+                        for (const item of (Array.isArray(data.items) ? data.items : [])) {
+                            const playable = normalizedPlaylistStreamUrl(item && item.streamUrl);
+                            if (item && item.pageUrl && playable) directByPage.set(item.pageUrl, playable);
+                        }
+                        const unresolved = [...new Set(data.links)].filter(link => !directByPage.has(link));
+                        resultsArea.value = `Resolving ${unresolved.length} remaining playlist entries...`;
+                        let next = 0;
+                        async function resolveWorker() {
+                            while (next < unresolved.length) {
+                                const page = unresolved[next++];
+                                try {
+                                    const data = await resolvePmvhavenUrl(page);
+                                    const playable = normalizedPlaylistStreamUrl(data.streamUrl);
+                                    if (playable) directByPage.set(page, playable);
+                                } catch (_) { /* Unavailable videos are omitted, never treated as media. */ }
+                            }
+                        }
+                        await Promise.all(Array.from({ length: Math.min(3, unresolved.length) }, () => resolveWorker()));
+                        bulkExtractedLinks = [...new Set(data.links)].map(page => directByPage.get(page)).filter(Boolean);
+                        resultsArea.value = bulkExtractedLinks.join('\n') || 'No playable media could be resolved.';
+                        document.getElementById('bulkAddAllBtn').disabled = !bulkExtractedLinks.length;
+                        document.getElementById('bulkCopyLinksBtn').disabled = !bulkExtractedLinks.length;
+                        showNotification(`Resolved ${bulkExtractedLinks.length}/${data.links.length} playable playlist streams.`);
                     } else {
                         resultsArea.value = 'No video links found in this playlist.';
                         showNotification('No playlist links found', 'warning');

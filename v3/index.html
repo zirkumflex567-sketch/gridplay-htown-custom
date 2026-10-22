@@ -1932,7 +1932,11 @@
                 .concat(globalPlaylistLinks.slice(0, normalizedIndex));
 
             return rotated
-                .map(src => runtimeQueueEntryToEditorItem({ src }))
+                .map(item => {
+                    const src = typeof item === 'string' ? item : (item.src || item.playbackSrc);
+                    const title = typeof item === 'object' && item ? item.name : null;
+                    return runtimeQueueEntryToEditorItem({ src, title });
+                })
                 .filter(Boolean);
         }
 
@@ -4237,13 +4241,56 @@
         let globalPlaylistIndex = 0;
         let globalPlaylistTargetCount = 0;
 
+        async function expandLinksWithPlaylists(links) {
+            const expanded = [];
+            for (const link of links) {
+                if (isPmvhavenPlaylistUrl(link)) {
+                    showNotification('Lade Playlist-Videos von PMVHaven...', 'info');
+                    try {
+                        const response = await fetch(`${GRIDPLAY_API_BASE}/playlist?url=${encodeURIComponent(link)}`);
+                        const data = await readApiJsonOrThrow(response, 'Konnte Playlist nicht laden');
+                        const items = Array.isArray(data.items) ? data.items : [];
+                        for (const it of items) {
+                            const streamUrl = it.streamUrl || (it.mediaUrl ? `${GRIDPLAY_API_BASE}/stream?url=${encodeURIComponent(it.mediaUrl)}` : null);
+                            if (streamUrl) {
+                                expanded.push({
+                                    src: it.pageUrl || streamUrl,
+                                    playbackSrc: streamUrl,
+                                    name: it.title || null,
+                                    mediaType: it.mediaType || 'mp4'
+                                });
+                            } else if (it.pageUrl) {
+                                expanded.push(it.pageUrl);
+                            }
+                        }
+                    } catch (e) {
+                        console.warn('Playlist expansion failed:', e);
+                        expanded.push(link);
+                    }
+                } else {
+                    expanded.push(link);
+                }
+            }
+            return expanded;
+        }
+
         async function checkGlobalPlaylistFill() {
             if (!isGlobalPlaylistActive || globalPlaylistLinks.length === 0) return;
             
             while (videos.length < globalPlaylistTargetCount) {
-                const link = globalPlaylistLinks[globalPlaylistIndex % globalPlaylistLinks.length];
+                const item = globalPlaylistLinks[globalPlaylistIndex % globalPlaylistLinks.length];
                 globalPlaylistIndex++;
-                addVideo(link, null, { __suppressNotification: true });
+                if (typeof item === 'object' && item && item.playbackSrc) {
+                    addVideo(item.src || item.playbackSrc, item.name || null, {
+                        forceHtml5: true,
+                        playbackSrc: item.playbackSrc,
+                        mediaType: item.mediaType || 'mp4',
+                        __suppressNotification: true
+                    });
+                } else {
+                    const link = typeof item === 'string' ? item : item.src;
+                    await addVideoWithResolution(link, null, { __suppressNotification: true });
+                }
                 // Slight delay to avoid layout jitter
                 await new Promise(r => setTimeout(r, 200));
             }
@@ -4254,10 +4301,18 @@
             const countInput = document.getElementById('globalSimultaneousCount');
             const rawText = input.value.trim();
             
-            const links = rawText.split(/[\n,\s]+/).map(l => l.trim()).filter(l => l && isValidUrl(l));
+            const rawLinks = rawText.split(/[\n,\s]+/).map(l => l.trim()).filter(l => l && isValidUrl(l));
             
+            if (rawLinks.length === 0) {
+                showNotification('Please enter at least one valid direct video link or playlist URL', 'warning');
+                return;
+            }
+
+            showNotification('Preparing Global Playlist...', 'info');
+            const links = await expandLinksWithPlaylists(rawLinks);
+
             if (links.length === 0) {
-                showNotification('Please enter at least one valid direct video link', 'warning');
+                showNotification('No playable videos found in the playlist', 'warning');
                 return;
             }
 
@@ -4271,7 +4326,7 @@
 
             // Clear grid
             clearAll();
-            showNotification(`Starting Global Playlist with ${simultaneousCount} slots...`);
+            showNotification(`Starting Global Playlist with ${simultaneousCount} slots (${links.length} videos in queue)...`);
 
             // Initialize Slots
             await checkGlobalPlaylistFill();
@@ -4280,57 +4335,65 @@
             document.getElementById('globalStartBtn').style.display = 'none';
             document.getElementById('globalUpdateBtn').style.display = 'inline-block';
             updateGlobalPlaylistButtonState();
+            updateGlobalPlaylistStats();
 
             toggleGlobalPlaylistModule();
         }
 
-        function updateGlobalPlaylist() {
+        async function updateGlobalPlaylist() {
             const input = document.getElementById('globalPlaylistInput');
             const countInput = document.getElementById('globalSimultaneousCount');
             const rawText = input.value.trim();
-            const links = rawText.split(/[\n,\s]+/).map(l => l.trim()).filter(l => l && isValidUrl(l));
+            const rawLinks = rawText.split(/[\n,\s]+/).map(l => l.trim()).filter(l => l && isValidUrl(l));
             
-            if (links.length === 0) {
+            if (rawLinks.length === 0) {
                 showNotification('The playlist cannot be empty', 'warning');
                 return;
             }
 
+            showNotification('Updating Global Playlist...', 'info');
+            const links = await expandLinksWithPlaylists(rawLinks);
+
             globalPlaylistLinks = links;
             globalPlaylistTargetCount = parseInt(countInput.value) || globalPlaylistTargetCount;
             
-            showNotification(`Global Playlist updated! Scaling to ${globalPlaylistTargetCount} slots...`, 'info');
+            showNotification(`Global Playlist updated! ${links.length} videos in queue, scaling to ${globalPlaylistTargetCount} slots...`, 'info');
             updateGlobalPlaylistStats();
             checkGlobalPlaylistFill();
             toggleGlobalPlaylistModule();
         }
 
-        function appendGlobalPlaylistLinks() {
+        async function appendGlobalPlaylistLinks() {
             const quickInput = document.getElementById('globalQuickAppend');
             const textarea = document.getElementById('globalPlaylistInput');
             const raw = quickInput.value.trim();
-            const newLinks = raw.split(/[\n,\s]+/).map(l => l.trim()).filter(l => l && isValidUrl(l));
+            const rawLinks = raw.split(/[\n,\s]+/).map(l => l.trim()).filter(l => l && isValidUrl(l));
             
-            if (newLinks.length === 0) {
+            if (rawLinks.length === 0) {
                 showNotification('Please enter at least one valid link', 'warning');
                 return;
             }
+
+            const newLinks = await expandLinksWithPlaylists(rawLinks);
 
             // Append to internal list
             globalPlaylistLinks = [...globalPlaylistLinks, ...newLinks];
             
             // Sync UI textarea if it's open
+            const newUrls = newLinks.map(l => typeof l === 'string' ? l : l.src);
             if (textarea.value.trim()) {
-                textarea.value += '\n' + newLinks.join('\n');
+                textarea.value += '\n' + newUrls.join('\n');
             } else {
-                textarea.value = newLinks.join('\n');
+                textarea.value = newUrls.join('\n');
             }
             
             quickInput.value = '';
             showNotification(`Added ${newLinks.length} videos to queue! Total: ${globalPlaylistLinks.length}`, 'success');
             updateGlobalPlaylistStats();
             
-            // If we weren't active before, maybe we should start? No, let the user hit Start.
-            // But if we ARE active, the loop will naturally pick them up.
+            if (isGlobalPlaylistActive) {
+                checkGlobalPlaylistFill();
+            }
         }
 
         function stopGlobalPlaylist() {
@@ -4359,9 +4422,21 @@
 
             const candidateCount = globalPlaylistLinks.length;
             for (let attempt = 0; attempt < candidateCount; attempt++) {
-                const link = globalPlaylistLinks[globalPlaylistIndex % candidateCount];
+                const item = globalPlaylistLinks[globalPlaylistIndex % candidateCount];
                 globalPlaylistIndex++;
-                const loaded = await loadSourceIntoSlot(videoId, link, null, { __suppressNotification: true });
+                let loaded = false;
+                if (typeof item === 'object' && item && item.playbackSrc) {
+                    updateVideoSlotContent(videoId, item.src || item.playbackSrc, item.name || null, {
+                        forceHtml5: true,
+                        playbackSrc: item.playbackSrc,
+                        mediaType: item.mediaType || 'mp4',
+                        __suppressNotification: true
+                    });
+                    loaded = true;
+                } else {
+                    const link = typeof item === 'string' ? item : item.src;
+                    loaded = await loadSourceIntoSlot(videoId, link, null, { __suppressNotification: true });
+                }
                 if (loaded) {
                     return;
                 }

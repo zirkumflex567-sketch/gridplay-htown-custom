@@ -116,6 +116,22 @@ Recommended operational flow:
 3. Script syncs static files and API code, then restarts/reloads required services.
 4. Script runs lightweight validation (service status + health checks) and logs output via `journalctl`.
 
+### PMVHaven-Account und direkte Playlist-Streams (v3)
+
+Die Account-Oberfläche befindet sich in **GridPlay v3** (`/gridplay/v3/`):
+
+1. Öffne **PMVHaven Login** und melde dich mit deinem Account an. Der Server prüft die tatsächliche Session und speichert **nur den Session-Cookie**, nicht dein Passwort.
+2. Öffne **PMVHaven Playlist Extractor** und füge eine URL im Format `https://pmvhaven.com/playlists/<ID>` ein.
+3. **Extract Links** löst zuerst bekannte Medienlinks aus der Playlist auf, versucht fehlende Links einzeln nachzuladen und zeigt ausschließlich erfolgreich ermittelte, über den GridPlay-Proxy abspielbare URLs an.
+4. **Copy Links** kopiert die Stream-URLs. **Add All** lädt die auflösbaren Videos in das Grid; unzugängliche oder gelöschte Medien werden ausgelassen und gezählt.
+5. Direkte `.m3u8`-Streams werden auch hinter einem URL-encodierten Proxy-Link als HLS behandelt.
+
+Die v1- und v2-Server sollten dieselbe Auth-Datei unter `/opt/gridplay-api/data/pmvhaven-auth.json` verwenden. Alternativ ist für beide `PMVHAVEN_AUTH_PATH` auf denselben Speicherort zu setzen. Der Serverprozess benötigt Lese-/Schreibrechte für diese Datei.
+
+**Sicherheit:** Diese Installation verwendet derzeit **einen serverweiten PMVHaven-Account**. Deshalb müssen die GridPlay-Oberfläche und insbesondere `/gridplay-api/auth/*` vor fremdem Zugriff geschützt werden (z. B. private Instanz oder nginx Basic Auth). Ohne zusätzliche Zugriffsbeschränkung können andere Besucher die Anmeldung ersetzen, ausloggen oder den serverseitigen Zugriff auf autorisierte Streams mitbenutzen. Niemals Zugangsdaten oder Cookies ins Git-Repository einchecken.
+
+**Einschränkungen:** Gelöschte/private Videos, fehlende Berechtigungen, abgelaufene Stream-Adressen und vom Anbieter unterbundene Zugriffe können nicht zuverlässig aufgelöst werden. Der Offline-Testlauf benötigt keinen echten Account; der Live-Test mit deinem Account muss nach dem Deployment erfolgen. Verwende die Funktionen nur im Rahmen der Nutzungsrechte und Anbieterbedingungen.
+
 ### Browser Compatibility
 | Feature | Chrome | Firefox | Safari | Edge |
 |---------|--------|---------|--------|------|

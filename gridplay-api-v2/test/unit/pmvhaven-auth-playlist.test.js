@@ -77,7 +77,7 @@ test('saved PMVHaven cookie is attached to provider page requests', async () => 
 });
 
 test('inline v3 JavaScript syntax remains valid after UI changes', () => {
-  const html = fs.readFileSync(path.resolve(__dirname, '../../../../v3/index.html'), 'utf8');
+  const html = fs.readFileSync(path.resolve(__dirname, '../../../v3/index.html'), 'utf8');
   const matches = [...html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)];
   for (const match of matches) {
     if (match[1].trim()) assert.doesNotThrow(() => new vm.Script(match[1]));

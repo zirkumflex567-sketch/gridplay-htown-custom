@@ -254,7 +254,7 @@ async function resolvePlaylist(url, ctx = {}) {
 
   const html = await fetchHtml(url, { timeout });
   const payload = extractNuxtPayloadArray(html);
-  const items = extractPlaylistItemsFromNuxt(payload);
+  const items = extractPlaylistItemsFromNuxt(payload, url);
 
   return {
     pageUrl: url,

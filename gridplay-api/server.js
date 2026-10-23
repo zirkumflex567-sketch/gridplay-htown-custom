@@ -1152,7 +1152,8 @@ async function handleResolve(reqUrl, res) {
 
         const upstream = await fetch(pageUrl, {
             redirect: 'follow',
-            headers
+            headers,
+            signal: AbortSignal.timeout(15000)
         });
 
         if (!upstream.ok) {
@@ -1219,7 +1220,8 @@ async function handlePlaylist(reqUrl, res) {
 
         const upstream = await fetch(playlistUrl, {
             redirect: 'follow',
-            headers
+            headers,
+            signal: AbortSignal.timeout(15000)
         });
 
         if (!upstream.ok) {
@@ -1265,6 +1267,8 @@ async function handleStream(req, reqUrl, res) {
     }
 
     const abortController = new AbortController();
+    let isStreaming = false;
+
     const abortUpstream = () => {
         try {
             abortController.abort();
@@ -1273,6 +1277,10 @@ async function handleStream(req, reqUrl, res) {
 
     req.on('close', abortUpstream);
     res.on('close', abortUpstream);
+
+    const connectTimeoutId = setTimeout(() => {
+        abortUpstream();
+    }, 20000);
 
     try {
         const upstreamHost = mediaUrl.hostname.toLowerCase();
@@ -1315,6 +1323,7 @@ async function handleStream(req, reqUrl, res) {
                 signal: abortController.signal
             });
         }
+        clearTimeout(connectTimeoutId);
 
         if (!upstream.ok && upstream.status !== 206) {
             sendJson(res, upstream.status, { error: `Upstream returned HTTP ${upstream.status}.` });
@@ -1397,16 +1406,31 @@ async function handleStream(req, reqUrl, res) {
         }
 
         const readable = Readable.fromWeb(upstream.body);
+        isStreaming = true;
+
+        const onClientClose = () => {
+            abortUpstream();
+            try { if (!readable.destroyed) readable.destroy(); } catch (_) {}
+        };
+        req.once('close', onClientClose);
+        res.once('close', onClientClose);
+
         readable.on('error', (err) => {
             abortUpstream();
             if (!res.destroyed) res.destroy(err);
         });
         res.on('error', (err) => {
             abortUpstream();
-            readable.destroy(err);
+            try { if (!readable.destroyed) readable.destroy(err); } catch (_) {}
         });
+        res.on('finish', () => {
+            req.off('close', onClientClose);
+            res.off('close', onClientClose);
+        });
+
         readable.pipe(res);
     } catch (error) {
+        clearTimeout(connectTimeoutId);
         abortUpstream();
         if (error.name === 'AbortError') {
             return;
@@ -1417,8 +1441,11 @@ async function handleStream(req, reqUrl, res) {
             res.destroy();
         }
     } finally {
-        req.off('close', abortUpstream);
-        res.off('close', abortUpstream);
+        clearTimeout(connectTimeoutId);
+        if (!isStreaming) {
+            req.off('close', abortUpstream);
+            res.off('close', abortUpstream);
+        }
     }
 }
 
@@ -1477,14 +1504,9 @@ async function handleAuthStatus(res) {
             sendJson(res, 200, { authenticated: false, user: null });
             return;
         }
-        const check = await pmvhavenAuth.checkSession(auth.cookies);
-        if (!check.authenticated) {
-            sendJson(res, 200, { authenticated: false, user: null, message: 'Session expired or invalid.' });
-            return;
-        }
         sendJson(res, 200, {
             authenticated: true,
-            user: check.user,
+            user: auth.user || { email: auth.email },
             email: auth.email || null,
             updatedAt: auth.updatedAt || null
         });

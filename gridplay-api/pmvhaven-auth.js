@@ -73,7 +73,8 @@ async function checkSession(cookieString) {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
                 'Referer': 'https://pmvhaven.com/',
                 'Accept': 'application/json'
-            }
+            },
+            signal: AbortSignal.timeout(10000)
         });
         if (!res.ok) {
             return { authenticated: false, user: null, error: `HTTP ${res.status}` };
@@ -93,20 +94,29 @@ async function loginWithEmail(email, password, rememberMe = true) {
         throw new Error('Email und Passwort sind erforderlich.');
     }
 
-    const response = await fetch('https://pmvhaven.com/api/auth/sign-in/email', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'Origin': 'https://pmvhaven.com',
-            'Referer': 'https://pmvhaven.com/login',
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36'
-        },
-        body: JSON.stringify({
-            email: email.trim(),
-            password: password,
-            rememberMe: Boolean(rememberMe)
-        })
-    });
+    let response;
+    try {
+        response = await fetch('https://pmvhaven.com/api/auth/sign-in/email', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Origin': 'https://pmvhaven.com',
+                'Referer': 'https://pmvhaven.com/login',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36'
+            },
+            body: JSON.stringify({
+                email: email.trim(),
+                password: password,
+                rememberMe: Boolean(rememberMe)
+            }),
+            signal: AbortSignal.timeout(15000)
+        });
+    } catch (err) {
+        if (err.name === 'TimeoutError' || err.name === 'AbortError') {
+            throw new Error('Zeitüberschreitung: PMVHaven antwortet aktuell nicht (Server-Timeout). Bitte später erneut versuchen.');
+        }
+        throw err;
+    }
 
     const cookieString = parseSetCookie(response.headers);
 

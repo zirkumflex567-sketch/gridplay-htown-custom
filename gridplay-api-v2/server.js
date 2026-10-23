@@ -425,11 +425,17 @@ async function handleStream(req, reqUrl, res) {
   }
 
   const abortController = new AbortController();
+  let isStreaming = false;
+
   const abortUpstream = () => {
     try { abortController.abort(); } catch (_) {}
   };
   req.on('close', abortUpstream);
   res.on('close', abortUpstream);
+
+  const connectTimeoutId = setTimeout(() => {
+    abortUpstream();
+  }, 20000);
 
   try {
     const cookie = await pmvhavenCookieFor(mediaUrl.toString());
@@ -454,6 +460,7 @@ async function handleStream(req, reqUrl, res) {
         method: 'GET', redirect: 'follow', headers, signal: abortController.signal
       });
     }
+    clearTimeout(connectTimeoutId);
     if (!upstream.ok && upstream.status !== 206) {
       return sendJson(res, upstream.status, { error: `Upstream returned HTTP ${upstream.status}.` });
     }
@@ -496,23 +503,40 @@ async function handleStream(req, reqUrl, res) {
     res.writeHead(upstream.status, responseHeaders);
     if (req.method === 'HEAD' || !upstream.body) return res.end();
     const readable = Readable.fromWeb(upstream.body);
+    isStreaming = true;
+
+    const onClientClose = () => {
+      abortUpstream();
+      try { if (!readable.destroyed) readable.destroy(); } catch (_) {}
+    };
+    req.once('close', onClientClose);
+    res.once('close', onClientClose);
+
     readable.on('error', (err) => {
       abortUpstream();
       if (!res.destroyed) res.destroy(err);
     });
     res.on('error', (err) => {
       abortUpstream();
-      readable.destroy(err);
+      try { if (!readable.destroyed) readable.destroy(err); } catch (_) {}
+    });
+    res.on('finish', () => {
+      req.off('close', onClientClose);
+      res.off('close', onClientClose);
     });
     readable.pipe(res);
   } catch (error) {
+    clearTimeout(connectTimeoutId);
     abortUpstream();
     if (error.name === 'AbortError') return;
     if (!res.headersSent) sendJson(res, 502, { error: `Stream proxy failed: ${error.message}` });
     else res.destroy(error);
   } finally {
-    req.off('close', abortUpstream);
-    res.off('close', abortUpstream);
+    clearTimeout(connectTimeoutId);
+    if (!isStreaming) {
+      req.off('close', abortUpstream);
+      res.off('close', abortUpstream);
+    }
   }
 }
 

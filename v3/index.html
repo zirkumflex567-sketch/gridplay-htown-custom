@@ -4250,7 +4250,10 @@ document.readyState === "loading" ? document.addEventListener("DOMContentLoaded"
             const loggedInActions = document.getElementById('pmvhavenLoggedInActions');
 
             try {
-                const res = await fetch(`${GRIDPLAY_API_BASE}/auth/status`);
+                const res = await fetch(`${GRIDPLAY_API_BASE}/auth/status`, {
+                    cache: 'no-store',
+                    signal: AbortSignal.timeout(8000)
+                });
                 if (!res.ok) throw new Error(`HTTP ${res.status}`);
                 const data = await res.json();
                 pmvhavenAuthState = data;
@@ -4329,7 +4332,8 @@ document.readyState === "loading" ? document.addEventListener("DOMContentLoaded"
                 const res = await fetch(`${GRIDPLAY_API_BASE}/auth/login`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ email, password, rememberMe })
+                    body: JSON.stringify({ email, password, rememberMe }),
+                    signal: AbortSignal.timeout(18000)
                 });
 
                 const data = await res.json();

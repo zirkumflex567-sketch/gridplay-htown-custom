@@ -84,6 +84,10 @@ function proxyRequest(req, res, targetPort) {
         proxyRes.pipe(res);
     });
 
+    proxyReq.setTimeout(30000, () => {
+        proxyReq.destroy(new Error('Gateway Timeout after 30s'));
+    });
+
     proxyReq.on('error', (err) => {
         if (!res.headersSent) {
             res.writeHead(502, { 'Content-Type': 'application/json' });
